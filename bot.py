@@ -426,14 +426,17 @@ async def _unified_button_handler(update: Update, context):
             selected_time = parts[idx + 1:]
             add_slot(uid, selected_date, selected_time)
             text = t("slot_added", lang, date=selected_date, time=selected_time)
+            text += "\n\n" + t("add_more", lang)
+            kb = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("✅ " + t("yes_add_more", lang), callback_data="addslot_pick_date"),
+                    InlineKeyboardButton("❌ " + t("no_back", lang), callback_data="menu_back"),
+                ]
+            ])
             try:
-                await query.edit_message_text(
-                    text,
-                    reply_markup=date_picker_keyboard(lang),
-                    parse_mode="Markdown",
-                )
+                await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
             except Exception:
-                await update.effective_message.reply_text(text, parse_mode="Markdown")
+                await update.effective_message.reply_text(text, reply_markup=kb, parse_mode="Markdown")
         await query.answer()
         return
 
@@ -496,6 +499,14 @@ async def _unified_button_handler(update: Update, context):
                     reply_markup=recurring_list_keyboard(patterns, lang),
                     parse_mode="Markdown",
                 )
+        await query.answer()
+        return
+
+    # Menu back (after slot created etc.)
+    if data == "menu_back":
+        uid = query.from_user.id
+        lang = get_language(uid)
+        await _show_menu(update, context, uid, lang)
         await query.answer()
         return
 
@@ -572,15 +583,16 @@ def main():
         today = datetime.date.today()
         action = query.data
         if action == "check_today":
-            period, query_text = "bugungi", today.isoformat()
+            period, results = "bugungi", _get_check_results(text_query=today.isoformat())
         elif action == "check_week":
             end = today + datetime.timedelta(days=7)
-            period, query_text = "shu haftadagi", f"FROM_DATE:{today.isoformat()},{end.isoformat()}"
+            period, results = "shu haftadagi", _get_check_results(
+                date_from=today.isoformat(), date_to=end.isoformat(),
+            )
         elif action == "check_month":
-            period, query_text = "shu oydagi", today.strftime("%Y-%m")
+            period, results = "shu oydagi", _get_check_results(month=today.strftime("%Y-%m"))
         else:
             return
-        results = find_checks_by_query(query_text)
         if not results:
             await query.message.reply_text(f"📭 {period} chek topilmadi.")
             return
@@ -598,6 +610,15 @@ def main():
                 )
 
     app.add_handler(CallbackQueryHandler(handle_check_period, pattern=r"^check_"))
+
+    def _get_check_results(text_query=None, month=None, date_from=None, date_to=None):
+        """Wrapper for find_checks_by_query with extra params."""
+        return find_checks_by_query(
+            query=text_query,
+            month=month,
+            date_from=date_from,
+            date_to=date_to,
+        )
 
     async def _send_check_results(update, context, uid, results, query_text):
         if not results:

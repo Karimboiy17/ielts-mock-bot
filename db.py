@@ -598,18 +598,20 @@ def save_check_forward(booking_id, chat_id, message_id):
     conn.close()
 
 
-def find_checks_by_query(query):
-    """Search checks by student name, date (YYYY-MM-DD), or month (YYYY-MM).
+def find_checks_by_query(query=None, month=None, date_from=None, date_to=None):
+    """Search checks by student name, date range, or month.
     Returns list of {student_name, date, time, teacher_name, chat_id, message_id}."""
     conn = get_db()
 
-    is_date = len(query) == 10 and query.count("-") == 2
-    is_range = query.startswith("FROM_DATE:")
-    is_month = len(query) == 7 and query.count("-") == 1
+    if query and len(query) == 7 and query.count("-") == 1:
+        month = query
+        query = None
+    elif query and len(query) == 10 and query.count("-") == 2:
+        date_from = query
+        date_to = query
+        query = None
 
-    if is_range:
-        parts = query[10:].split(",")
-        start_date, end_date = parts[0], parts[1]
+    if date_from and date_to:
         rows = conn.execute(
             """SELECT b.student_name, s.date, s.time, t2.name as teacher_name,
                       cf.chat_id, cf.message_id
@@ -619,21 +621,9 @@ def find_checks_by_query(query):
                JOIN check_forwards cf ON cf.booking_id = b.id
                WHERE s.date >= ? AND s.date <= ?
                ORDER BY s.date, s.time""",
-            (start_date, end_date),
+            (date_from, date_to),
         ).fetchall()
-    elif is_date:
-        rows = conn.execute(
-            """SELECT b.student_name, s.date, s.time, t2.name as teacher_name,
-                      cf.chat_id, cf.message_id
-               FROM bookings b
-               JOIN slots s ON s.id = b.slot_id
-               JOIN teachers t2 ON t2.id = s.teacher_id
-               JOIN check_forwards cf ON cf.booking_id = b.id
-               WHERE s.date = ?
-               ORDER BY s.date, s.time""",
-            (query,),
-        ).fetchall()
-    elif is_month:
+    elif month:
         rows = conn.execute(
             """SELECT b.student_name, s.date, s.time, t2.name as teacher_name,
                       cf.chat_id, cf.message_id
@@ -643,10 +633,9 @@ def find_checks_by_query(query):
                JOIN check_forwards cf ON cf.booking_id = b.id
                WHERE s.date LIKE ?
                ORDER BY s.date, s.time""",
-            (query + "%",),
+            (month + "%",),
         ).fetchall()
-    else:
-        # Search by student name (partial match)
+    elif query:
         search_term = f"%{query}%"
         rows = conn.execute(
             """SELECT b.student_name, s.date, s.time, t2.name as teacher_name,
@@ -659,6 +648,9 @@ def find_checks_by_query(query):
                ORDER BY s.date, s.time""",
             (search_term,),
         ).fetchall()
+    else:
+        conn.close()
+        return []
 
     conn.close()
     return [dict(r) for r in rows]

@@ -111,9 +111,24 @@ T = {
     "pick_date": {"uz": "📅 *Slot sanasini tanlang:*", "en": "📅 *Pick a date:*", "ru": "📅 *Выберите дату:*"},
     "pick_time": {"uz": "🕐 *{date} — vaqtni tanlang:*", "en": "🕐 *{date} — pick a time:*", "ru": "🕐 *{date} — выберите время:*"},
     "slot_added": {
-        "uz": "✅ *Slot qo'shildi!*\\n\\n📅 Sana: {date}\\n🕐 Vaqt: {time}",
-        "en": "✅ *Slot added!*\\n\\n📅 Date: {date}\\n🕐 Time: {time}",
-        "ru": "✅ *Слот добавлен!*\\n\\n📅 Дата: {date}\\n🕐 Время: {time}",
+        "uz": "✅ *Slot qo'shildi!*\n\n📅 Sana: {date}\n🕐 Vaqt: {time}",
+        "en": "✅ *Slot added!*\n\n📅 Date: {date}\n🕐 Time: {time}",
+        "ru": "✅ *Слот добавлен!*\n\n📅 Дата: {date}\n🕐 Время: {time}",
+    },
+    "add_more": {
+        "uz": "Yana slot qo'shasizmi?",
+        "en": "Add another slot?",
+        "ru": "Добавить еще слот?",
+    },
+    "yes_add_more": {
+        "uz": "Ha, yana qo'shish",
+        "en": "Yes, add more",
+        "ru": "Да, добавить",
+    },
+    "no_back": {
+        "uz": "Yo'q, menyuga",
+        "en": "No, back to menu",
+        "ru": "Нет, в меню",
     },
     "no_slots": {
         "uz": "📭 Hozircha slotlar yo'q.",

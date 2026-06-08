@@ -78,7 +78,10 @@ def date_picker_keyboard(lang="uz"):
 
 # ─── Time Picker ─────────────────────────────────────
 
-TIMES = ["09:00", "10:00", "11:00", "12:00", "14:00", "15:00", "16:00", "17:00", "18:00"]
+HOURS = list(range(9, 19))  # 9 to 18
+MINUTE_INTERVALS = ["00", "15", "30", "45"]
+
+TIMES = [f"{h:02d}:{m}" for h in HOURS for m in MINUTE_INTERVALS]
 
 
 def time_picker_keyboard(selected_date, lang="uz"):
@@ -89,7 +92,7 @@ def time_picker_keyboard(selected_date, lang="uz"):
             tm,
             callback_data=f"addslot_time_{selected_date}_{tm}",
         ))
-        if len(row) == 3:
+        if len(row) == 4:
             buttons.append(row)
             row = []
     if row:
