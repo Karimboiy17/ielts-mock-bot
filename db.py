@@ -71,6 +71,15 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(teacher_telegram_id, day_of_week, time)
         );
+
+        CREATE TABLE IF NOT EXISTS check_forwards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            booking_id INTEGER NOT NULL,
+            chat_id INTEGER NOT NULL,
+            message_id INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (booking_id) REFERENCES bookings(id)
+        );
     """)
     conn.commit()
     conn.close()
@@ -572,6 +581,72 @@ def get_all_teachers():
     rows = conn.execute(
         "SELECT id, telegram_id, name, username FROM teachers ORDER BY name"
     ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ─── Check Storage & Search ────────────────────────────────
+
+def save_check_forward(booking_id, chat_id, message_id):
+    """Save where a check was forwarded (group message ID)."""
+    conn = get_db()
+    conn.execute(
+        "INSERT OR REPLACE INTO check_forwards (booking_id, chat_id, message_id) VALUES (?, ?, ?)",
+        (booking_id, chat_id, message_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def find_checks_by_query(query):
+    """Search checks by student name, date (YYYY-MM-DD), or month (YYYY-MM).
+    Returns list of {student_name, date, time, teacher_name, chat_id, message_id}."""
+    conn = get_db()
+
+    is_month = len(query) == 7 and query.count("-") == 1
+    is_date = len(query) == 10 and query.count("-") == 2
+
+    if is_date:
+        # Search by exact date
+        rows = conn.execute(
+            """SELECT b.student_name, s.date, s.time, t2.name as teacher_name,
+                      cf.chat_id, cf.message_id
+               FROM bookings b
+               JOIN slots s ON s.id = b.slot_id
+               JOIN teachers t2 ON t2.id = s.teacher_id
+               JOIN check_forwards cf ON cf.booking_id = b.id
+               WHERE s.date = ?
+               ORDER BY s.date, s.time""",
+            (query,),
+        ).fetchall()
+    elif is_month:
+        # Search by month (YYYY-MM)
+        rows = conn.execute(
+            """SELECT b.student_name, s.date, s.time, t2.name as teacher_name,
+                      cf.chat_id, cf.message_id
+               FROM bookings b
+               JOIN slots s ON s.id = b.slot_id
+               JOIN teachers t2 ON t2.id = s.teacher_id
+               JOIN check_forwards cf ON cf.booking_id = b.id
+               WHERE s.date LIKE ?
+               ORDER BY s.date, s.time""",
+            (query + "%",),
+        ).fetchall()
+    else:
+        # Search by student name (partial match)
+        search_term = f"%{query}%"
+        rows = conn.execute(
+            """SELECT b.student_name, s.date, s.time, t2.name as teacher_name,
+                      cf.chat_id, cf.message_id
+               FROM bookings b
+               JOIN slots s ON s.id = b.slot_id
+               JOIN teachers t2 ON t2.id = s.teacher_id
+               JOIN check_forwards cf ON cf.booking_id = b.id
+               WHERE b.student_name LIKE ?
+               ORDER BY s.date, s.time""",
+            (search_term,),
+        ).fetchall()
+
     conn.close()
     return [dict(r) for r in rows]
 

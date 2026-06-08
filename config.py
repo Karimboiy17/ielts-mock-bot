@@ -12,6 +12,7 @@ TEACHER_NAMES = {
     1054482233: "Karimboy (Admin)",
     8509971923: "Test Teacher",
 }
+GROUP_CHECK_ID = int(os.getenv("GROUP_CHECK_ID", "-5291911618"))  # Chek rasmlari tushadigan guruh
 
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN not set in environment")

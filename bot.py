@@ -7,13 +7,13 @@ from telegram.ext import (
 )
 from telegram.error import Conflict
 
-from config import BOT_TOKEN, ADMIN_IDS, TEACHER_IDS
+from config import BOT_TOKEN, ADMIN_IDS, TEACHER_IDS, GROUP_CHECK_ID
 from db import (
     init_db, is_teacher, add_teacher, add_slot, get_all_bookings,
     get_all_teachers, get_language, set_language,
     sync_from_sheets, get_current_payment_for_user,
     submit_payment_receipt, approve_payment, reject_payment,
-    get_pending_payments,
+    get_pending_payments, save_check_forward, find_checks_by_query,
 )
 from handlers.student import start, slots_cmd, mybookings_cmd, cancel_cmd, button_handler
 from handlers.teacher import addslot_cmd, myslots_cmd, removeslot_cmd
@@ -69,6 +69,20 @@ async def handle_photo(update: Update, context):
         return
 
     await update.message.reply_text(t("payment_received", lang))
+
+    # Forward to check group
+    group_msg_id = None
+    if GROUP_CHECK_ID:
+        try:
+            gmsg = await context.bot.send_photo(
+                chat_id=GROUP_CHECK_ID,
+                photo=file_id,
+                caption=f"💳 Chek\n👤 {result['student_name']}\n📅 {result['date']} {result['time']}\n👨‍🏫 {result['teacher_name']}",
+            )
+            group_msg_id = gmsg.message_id
+            save_check_forward(booking["id"], GROUP_CHECK_ID, group_msg_id)
+        except Exception as e:
+            logger.error("Cannot forward to group %s: %s", GROUP_CHECK_ID, e)
 
     # Notify all admins
     admin_msg = t("payment_approve_admin", lang,
@@ -507,6 +521,45 @@ def main():
 
     # Photo handler for payment receipts
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+
+    # Check search command (admin only)
+    async def checkquery_cmd(update: Update, context):
+        uid = update.effective_user.id
+        lang = get_language(uid)
+        if uid not in ADMIN_IDS:
+            await update.message.reply_text(t("admin_only", lang))
+            return
+        args = context.args
+        if not args:
+            await update.message.reply_text(
+                "🔍 Format: `/checkquery <ism|oy|sana>`\n\n"
+                "Masalan:\n"
+                "`/checkquery Karimboy`\n"
+                "`/checkquery 2026-06`\n"
+                "`/checkquery 2026-06-15`",
+                parse_mode="Markdown",
+            )
+            return
+        query_text = " ".join(args).strip()
+        results = find_checks_by_query(query_text)
+        if not results:
+            await update.message.reply_text("📭 Hech qanday chek topilmadi.")
+            return
+        for r in results:
+            try:
+                await context.bot.copy_message(
+                    chat_id=uid,
+                    from_chat_id=r["chat_id"],
+                    message_id=r["message_id"],
+                    caption=f"👤 {r['student_name']} | 📅 {r['date']} | {r['time']} | {r['teacher_name']}",
+                )
+            except Exception as e:
+                await update.message.reply_text(
+                    f"👤 {r['student_name']} | 📅 {r['date']} | {r['time']} | {r['teacher_name']}\n⚠️ Rasmni qayta yuborib bo'lmadi"
+                )
+
+    app.add_handler(CommandHandler("checkquery", checkquery_cmd))
+    app.add_handler(CommandHandler("checkq", checkquery_cmd))  # Short alias
 
     # Language selection + unified callback handler
     app.add_handler(CallbackQueryHandler(handle_lang_select))
