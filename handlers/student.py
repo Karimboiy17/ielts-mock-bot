@@ -4,6 +4,7 @@ from telegram.ext import ContextTypes
 from db import (
     get_available_slots, request_booking, get_student_bookings,
     cancel_booking, get_teacher_by_id, confirm_booking, reject_booking,
+    is_teacher,
 )
 from keyboard import main_menu, main_menu_reply, slots_keyboard, cancel_keyboard, teacher_confirm_keyboard
 from config import ADMIN_IDS
@@ -16,10 +17,36 @@ def is_admin(user_id):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     admin = is_admin(uid)
+    text = (
+        "🎓 *IELTS Zone | Mock Imtihon Bandlov Boti*\n\n"
+        "_Mock imtihon uchun o'qituvchidan vaqt band qilish tizimi._\n\n"
+        "📌 *Qanday ishlaydi:*\n"
+        "1️⃣ \"📋 Mavjud slotlar\" — bo'sh vaqtlarni ko'ring\n"
+        "2️⃣ Kerakli vaqtni tanlang — so'rov o'qituvchiga boradi\n"
+        "3️⃣ O'qituvchi tasdiqlasa — bandlov tayyor ✅\n"
+        "4️⃣ \"📅 Mening bandlovlarim\" — bandlovlaringizni ko'ring\n"
+        "5️⃣ \"❌ Bandlovni bekor qilish\" — kerak bo'lsa bekor qiling\n\n"
+        "⏱ _Bandlov 24 soat ichida tasdiqlanadi._\n"
+        "❓ _Savollar bo'lsa: @Karimboiy17_"
+    )
+    if admin:
+        text = (
+            "👑 *IELTS Zone | Admin Panel*\n\n"
+            "➕ *Yangi slot* — bir martalik slot qo'shish\n"
+            "🔄 *Doimiy slot* — har hafta takrorlanadigan (masalan: dushanba 14:00)\n"
+            "📊 *Slotlarim* — o'zingizga tegishli slotlar\n"
+            "👨‍🏫 *O'qituvchi qo'shish* — yangi mock oluvchi qo'shish\n"
+            "📋 *Barcha bandlovlar* — barcha bandlovlarni ko'rish\n\n"
+            "_O'qituvchi qo'shish: o'qituvchining xabariga reply qilib `/addteacher Ism` yozing._"
+        )
+    if is_teacher(uid) and not admin:
+        text = (
+            "👨‍🏫 *IELTS Zone | O'qituvchi Panel*\n\n"
+            "📊 *Slotlarim* — band qilingan va bo'sh slotlaringiz\n\n"
+            "_O'quvchi bandlov so'rov yuborsa — shu chatga tasdiqlash xabari keladi._"
+        )
     await update.message.reply_text(
-        "🏠 *IELTS Zone Mock Booking*\n\n"
-        "Mock imtihon uchun o'qituvchi band qilish boti.\n\n"
-        "Quyidagi menyudan tanlang:",
+        text,
         reply_markup=main_menu_reply(is_admin=admin),
         parse_mode="Markdown",
     )
