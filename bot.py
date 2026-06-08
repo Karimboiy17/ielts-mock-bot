@@ -76,7 +76,15 @@ async def handle_menu_text(update: Update, context):
     elif text == "📊 Slotlarim":
         await myslots_cmd(update, context)
     elif text == "👨‍🏫 O'qituvchi qo'shish":
-        await addteacher_cmd(update, context)
+        await update.message.reply_text(
+            "📝 *O'qituvchi qo'shish* — quyidagi usullardan birini ishlating:\n\n"
+            "1️⃣ O'qituvchining biror xabariga *reply* qilib `/addteacher Ismi` yozing\n"
+            "2️⃣ `/addteacher @username Ismi` yozing\n"
+            "3️⃣ `/addteacher <Telegram_ID> Ismi` yozing\n\n"
+            "👤 Agar o'qituvchi botga hech qachon xabar yozmagan bo'lsa, "
+            "avval unga `@ieltszonemockbot` ga `/start` yozishini so'rang.",
+            parse_mode="Markdown",
+        )
     elif text == "📊 Barcha bandlovlar":
         if not is_admin(uid):
             await update.message.reply_text("⛔ Admin huquqi kerak.")
