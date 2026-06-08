@@ -399,7 +399,7 @@ async def _unified_button_handler(update: Update, context):
         return
 
     # Add-slot flow
-    if data.startswith("addslot_"):
+    if data.startswith("addslot_") or data.startswith("multitime_"):
         if not is_admin(uid) and not is_teacher_or_env(uid):
             await query.answer(t("teacher_only", lang), show_alert=True)
             return
@@ -421,8 +421,8 @@ async def _unified_button_handler(update: Update, context):
                 reply_markup=time_picker_multi_keyboard(selected_date, None, lang),
                 parse_mode="Markdown",
             )
-        # Multi-select: toggle a time checkbox
-        elif data.startswith("multitime_"):
+        # Multi-select: toggle a time checkbox (check BEFORE "multitime_done_")
+        elif data.startswith("multitime_") and not data.startswith("multitime_done_"):
             parts = data.replace("multitime_", "", 1)
             # parts = "HH:MM_YYYY-MM-DD"
             last_underscore = parts.rfind("_")
