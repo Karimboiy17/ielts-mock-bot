@@ -1,8 +1,18 @@
 import sqlite3
 import os
+import logging
 from datetime import date, timedelta
 
 DB = "bookings.db"
+logger = logging.getLogger(__name__)
+
+def _sheets(*args, **kwargs):
+    """Lazy import to avoid crash if gspread not installed."""
+    try:
+        from sheets_backup import sync_teacher, sync_slot, sync_booking
+        return {"sync_teacher": sync_teacher, "sync_slot": sync_slot, "sync_booking": sync_booking}
+    except ImportError:
+        return {}
 
 
 def get_db():
@@ -79,13 +89,24 @@ def get_teacher_by_id(teacher_db_id):
 
 def add_slot(teacher_telegram_id, date, time):
     conn = get_db()
-    conn.execute(
+    cur = conn.execute(
         "INSERT INTO slots (teacher_id, date, time, status) "
         "VALUES ((SELECT id FROM teachers WHERE telegram_id=?), ?, ?, 'available')",
         (teacher_telegram_id, date, time),
     )
     conn.commit()
+    slot_id = cur.lastrowid
+    # Get teacher name for sync
+    teacher = conn.execute(
+        "SELECT name FROM teachers WHERE telegram_id=?", (teacher_telegram_id,)
+    ).fetchone()
     conn.close()
+    sync = _sheets().get("sync_slot")
+    if sync and teacher:
+        try:
+            sync(str(slot_id), teacher["name"], date, time, "available")
+        except Exception as e:
+            logger.error("sync_slot failed: %s", e)
 
 
 def get_teacher_slots(teacher_telegram_id):
@@ -273,7 +294,18 @@ def confirm_booking(booking_id, teacher_telegram_id):
     conn.execute("UPDATE slots SET status = 'booked' WHERE id = ?", (booking["slot_id"],))
     conn.execute("UPDATE bookings SET status = 'accepted' WHERE id = ?", (booking_id,))
     conn.commit()
+    # Get date/time for sync
+    slot = conn.execute("SELECT date, time FROM slots WHERE id = ?", (booking["slot_id"],)).fetchone()
+    teacher_name = conn.execute(
+        "SELECT name FROM teachers WHERE id = ?", (teacher["id"],)
+    ).fetchone()
     conn.close()
+    sync = _sheets().get("sync_booking")
+    if sync and slot and teacher_name:
+        try:
+            sync(booking_id, booking["student_name"], teacher_name["name"], slot["date"], slot["time"], "Tasdiqlandi")
+        except Exception as e:
+            logger.error("sync_booking failed: %s", e)
     return {"student_telegram_id": booking["student_telegram_id"], "student_name": booking["student_name"]}
 
 
@@ -351,6 +383,12 @@ def add_teacher(telegram_id, name, username=""):
     )
     conn.commit()
     conn.close()
+    sync = _sheets().get("sync_teacher")
+    if sync:
+        try:
+            sync(telegram_id, name, username)
+        except Exception as e:
+            logger.error("sync_teacher failed: %s", e)
 
 
 def remove_teacher_db(telegram_id):
