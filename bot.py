@@ -9,7 +9,7 @@ from handlers.student import (
 from handlers.teacher import addslot_cmd, myslots_cmd, removeslot_cmd
 from handlers.admin import addteacher_cmd, removeteacher_cmd
 from keyboard import (
-    date_picker_keyboard, time_picker_keyboard, main_menu_reply,
+    date_picker_keyboard, time_picker_keyboard,
     day_picker_keyboard, time_picker_recurring_keyboard, recurring_list_keyboard,
 )
 

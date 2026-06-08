@@ -145,11 +145,6 @@ DAY_NAMES = {
     3: "Payshanba", 4: "Juma", 5: "Shanba", 6: "Yakshanba",
 }
 
-WEEKDAY_MAP = {
-    "Dushanba": 0, "Seshanba": 1, "Chorshanba": 2, "Chorshanba": 2,
-    "Payshanba": 3, "Juma": 4, "Shanba": 5, "Yakshanba": 6,
-}
-
 
 def add_recurring_pattern(teacher_telegram_id, day_of_week, time):
     conn = get_db()
