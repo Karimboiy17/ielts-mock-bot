@@ -6,14 +6,21 @@ from db import (
     cancel_booking, get_teacher_by_id, confirm_booking, reject_booking,
 )
 from keyboard import main_menu, main_menu_reply, slots_keyboard, cancel_keyboard, teacher_confirm_keyboard
+from config import ADMIN_IDS
+
+
+def is_admin(user_id):
+    return user_id in ADMIN_IDS
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    admin = is_admin(uid)
     await update.message.reply_text(
         "🏠 *IELTS Zone Mock Booking*\n\n"
         "Mock imtihon uchun o'qituvchi band qilish boti.\n\n"
         "Quyidagi menyudan tanlang:",
-        reply_markup=main_menu_reply(),
+        reply_markup=main_menu_reply(is_admin=admin),
         parse_mode="Markdown",
     )
 

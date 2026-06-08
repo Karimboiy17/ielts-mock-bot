@@ -1,18 +1,24 @@
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
-from config import BOT_TOKEN
-from db import init_db
+from config import BOT_TOKEN, ADMIN_IDS
+from db import init_db, is_teacher, add_teacher, add_slot
 from handlers.student import (
     start, slots_cmd, mybookings_cmd, cancel_cmd, button_handler,
 )
 from handlers.teacher import addslot_cmd, myslots_cmd, removeslot_cmd
 from handlers.admin import addteacher_cmd, removeteacher_cmd
+from keyboard import date_picker_keyboard, time_picker_keyboard, main_menu_reply
+
+
+def is_admin(user_id):
+    return user_id in ADMIN_IDS
 
 
 async def handle_menu_text(update: Update, context):
     """Handle ReplyKeyboard menu button presses."""
     text = update.message.text
+    uid = update.effective_user.id
 
     if text == "📋 Mavjud slotlar":
         await slots_cmd(update, context)
@@ -20,7 +26,94 @@ async def handle_menu_text(update: Update, context):
         await mybookings_cmd(update, context)
     elif text == "❌ Bandlovni bekor qilish":
         await cancel_cmd(update, context)
-    # ignore other plain text
+    elif text == "➕ Yangi slot":
+        # Admin: show date picker
+        if not is_admin(uid) and not is_teacher(uid):
+            await update.message.reply_text("⛔ Admin huquqi kerak.")
+            return
+        # Auto-register
+        if is_admin(uid) and not is_teacher(uid):
+            name = update.effective_user.full_name or "Admin"
+            add_teacher(uid, name)
+        await update.message.reply_text(
+            "📅 *Slot sanasini tanlang:*",
+            reply_markup=date_picker_keyboard(),
+            parse_mode="Markdown",
+        )
+    elif text == "📊 Slotlarim":
+        await myslots_cmd(update, context)
+    elif text == "👨‍🏫 O'qituvchi qo'shish":
+        await addteacher_cmd(update, context)
+
+
+# ── Also wire add-slot callbacks into the student button_handler ──
+# We monkey-patch by extending button_handler in bot.py so we keep one CallbackQueryHandler.
+
+_original_button_handler = button_handler
+
+
+async def unified_button_handler(update: Update, context):
+    """Handles ALL inline button callbacks — student + admin add-slot flow."""
+    query = update.callback_query
+    data = query.data
+    user = update.effective_user
+    uid = user.id
+
+    # ── Add-slot flow (admin / teacher) ──
+    if data.startswith("addslot_"):
+        if not is_admin(uid) and not is_teacher(uid):
+            await query.answer("⛔ Admin huquqi kerak.", show_alert=True)
+            return
+
+        # Auto-register
+        if is_admin(uid) and not is_teacher(uid):
+            name = user.full_name or "Admin"
+            add_teacher(uid, name)
+
+        if data == "addslot_pick_date":
+            await query.edit_message_text(
+                "📅 *Slot sanasini tanlang:*",
+                reply_markup=date_picker_keyboard(),
+                parse_mode="Markdown",
+            )
+        elif data.startswith("addslot_date_"):
+            selected_date = data.replace("addslot_date_", "")
+            await query.edit_message_text(
+                f"🕐 *{selected_date} — vaqtni tanlang:*",
+                reply_markup=time_picker_keyboard(selected_date),
+                parse_mode="Markdown",
+            )
+        elif data.startswith("addslot_time_"):
+            # addslot_time_2026-06-09_14:00
+            parts = data.replace("addslot_time_", "", 1)
+            # split on last underscore? No — format is date_time
+            # Find last underscore position for time
+            idx = parts.rfind("_")
+            selected_date = parts[:idx]
+            selected_time = parts[idx + 1:]
+            add_slot(uid, selected_date, selected_time)
+            text = (
+                f"✅ *Slot qo'shildi!*\n\n"
+                f"📅 Sana: {selected_date}\n"
+                f"🕐 Vaqt: {selected_time}"
+            )
+            # If called from message, need to send new; from callback we can edit
+            try:
+                await query.edit_message_text(
+                    text,
+                    reply_markup=date_picker_keyboard(),
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                await update.effective_message.reply_text(
+                    text,
+                    parse_mode="Markdown",
+                )
+        await query.answer()
+        return
+
+    # ── Fall through to original student button handler ──
+    await _original_button_handler(update, context)
 
 
 def main():
@@ -43,15 +136,18 @@ def main():
     app.add_handler(CommandHandler("addteacher", addteacher_cmd))
     app.add_handler(CommandHandler("removeteacher", removeteacher_cmd))
 
-    # Inline button handler (covers all callbacks)
-    app.add_handler(CallbackQueryHandler(button_handler))
+    # Inline button handler (covers all callbacks: student booking + admin add-slot)
+    app.add_handler(CallbackQueryHandler(unified_button_handler))
 
     # ReplyKeyboard menu button handler
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND &
         (filters.Text("📋 Mavjud slotlar") |
          filters.Text("📅 Mening bandlovlarim") |
-         filters.Text("❌ Bandlovni bekor qilish")),
+         filters.Text("❌ Bandlovni bekor qilish") |
+         filters.Text("➕ Yangi slot") |
+         filters.Text("📊 Slotlarim") |
+         filters.Text("👨‍🏫 O'qituvchi qo'shish")),
         handle_menu_text,
     ))
 

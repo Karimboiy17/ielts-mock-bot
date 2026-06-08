@@ -1,25 +1,66 @@
+from datetime import date, timedelta
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram import KeyboardButton, ReplyKeyboardMarkup
 
 
-def main_menu_reply():
+def main_menu_reply(is_admin=False):
     """Persistent reply keyboard at bottom of chat."""
-    return ReplyKeyboardMarkup(
-        [
-            [KeyboardButton("📋 Mavjud slotlar")],
-            [KeyboardButton("📅 Mening bandlovlarim"), KeyboardButton("❌ Bandlovni bekor qilish")],
-        ],
-        resize_keyboard=True,
-    )
+    rows = [
+        [KeyboardButton("📋 Mavjud slotlar")],
+        [KeyboardButton("📅 Mening bandlovlarim"), KeyboardButton("❌ Bandlovni bekor qilish")],
+    ]
+    if is_admin:
+        rows.append([
+            KeyboardButton("➕ Yangi slot"),
+            KeyboardButton("📊 Slotlarim"),
+        ])
+        rows.append([
+            KeyboardButton("👨‍🏫 O'qituvchi qo'shish"),
+        ])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
 
-def main_menu():
+def main_menu(is_admin=False):
     """Inline keyboard (used for back navigation)."""
-    return InlineKeyboardMarkup([
+    buttons = [
         [InlineKeyboardButton("📋 Mavjud slotlar", callback_data="slots")],
         [InlineKeyboardButton("📅 Mening bandlovlarim", callback_data="mybookings")],
         [InlineKeyboardButton("❌ Bandlovni bekor qilish", callback_data="cancel_menu")],
-    ])
+    ]
+    if is_admin:
+        buttons.append([InlineKeyboardButton("🔙 Orqaga", callback_data="back_menu")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def date_picker_keyboard():
+    """Show next 7 days for slot date selection."""
+    today = date.today()
+    buttons = []
+    for i in range(7):
+        d = today + timedelta(days=i)
+        label = f"📅 {d.strftime('%d %b (%a)')}"
+        buttons.append([InlineKeyboardButton(label, callback_data=f"addslot_date_{d.isoformat()}")])
+    buttons.append([InlineKeyboardButton("🔙 Orqaga", callback_data="back_menu")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def time_picker_keyboard(selected_date):
+    """Show time slots for a selected date."""
+    times = ["09:00", "10:00", "11:00", "12:00", "14:00", "15:00", "16:00", "17:00", "18:00"]
+    buttons = []
+    row = []
+    for t in times:
+        row.append(InlineKeyboardButton(t, callback_data=f"addslot_time_{selected_date}_{t}"))
+        if len(row) == 3:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    buttons.append([InlineKeyboardButton("🔙 Boshqa sana", callback_data="addslot_pick_date")])
+    buttons.append([InlineKeyboardButton("🔙 Orqaga", callback_data="back_menu")])
+    return InlineKeyboardMarkup(buttons)
+
 
 
 def slots_keyboard(slots):
