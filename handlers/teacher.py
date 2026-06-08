@@ -1,7 +1,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from db import is_teacher, add_slot, get_teacher_slots, remove_slot
+from db import is_teacher, add_slot, get_teacher_slots, remove_slot, add_teacher
 from config import ADMIN_IDS
 
 
@@ -9,11 +9,24 @@ def is_admin(user_id):
     return user_id in ADMIN_IDS
 
 
+def _ensure_teacher(uid, name="Admin"):
+    """Auto-register admin as teacher if not already."""
+    if not is_teacher(uid):
+        add_teacher(uid, name)
+        return True
+    return False
+
+
 async def addslot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if not is_teacher(uid) and not is_admin(uid):
         await update.message.reply_text("⛔ Siz o'qituvchi emassiz. Adminga murojaat qiling.")
         return
+
+    # Auto-register admin as teacher
+    if is_admin(uid):
+        name = update.effective_user.full_name or "Admin"
+        _ensure_teacher(uid, name)
 
     args = context.args
     if len(args) < 2:
