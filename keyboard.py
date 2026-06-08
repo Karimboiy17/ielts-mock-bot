@@ -1,7 +1,20 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import KeyboardButton, ReplyKeyboardMarkup
+
+
+def main_menu_reply():
+    """Persistent reply keyboard at bottom of chat."""
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton("📋 Mavjud slotlar")],
+            [KeyboardButton("📅 Mening bandlovlarim"), KeyboardButton("❌ Bandlovni bekor qilish")],
+        ],
+        resize_keyboard=True,
+    )
 
 
 def main_menu():
+    """Inline keyboard (used for back navigation)."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📋 Mavjud slotlar", callback_data="slots")],
         [InlineKeyboardButton("📅 Mening bandlovlarim", callback_data="mybookings")],

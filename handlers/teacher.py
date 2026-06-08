@@ -2,11 +2,17 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from db import is_teacher, add_slot, get_teacher_slots, remove_slot
+from config import ADMIN_IDS
+
+
+def is_admin(user_id):
+    return user_id in ADMIN_IDS
 
 
 async def addslot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_teacher(update.effective_user.id):
-        await update.message.reply_text("⛔ Siz o'qituvchi emassiz.")
+    uid = update.effective_user.id
+    if not is_teacher(uid) and not is_admin(uid):
+        await update.message.reply_text("⛔ Siz o'qituvchi emassiz. Adminga murojaat qiling.")
         return
 
     args = context.args
@@ -19,16 +25,17 @@ async def addslot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     date, time = args[0], args[1]
-    add_slot(update.effective_user.id, date, time)
+    add_slot(uid, date, time)
     await update.message.reply_text(f"✅ Slot qo'shildi: {date} {time}")
 
 
 async def myslots_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_teacher(update.effective_user.id):
+    uid = update.effective_user.id
+    if not is_teacher(uid) and not is_admin(uid):
         await update.message.reply_text("⛔ Siz o'qituvchi emassiz.")
         return
 
-    slots = get_teacher_slots(update.effective_user.id)
+    slots = get_teacher_slots(uid)
     if not slots:
         await update.message.reply_text("📭 Sizda hozircha slot yo'q.")
         return
@@ -51,7 +58,8 @@ async def myslots_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def removeslot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_teacher(update.effective_user.id):
+    uid = update.effective_user.id
+    if not is_teacher(uid) and not is_admin(uid):
         await update.message.reply_text("⛔ Siz o'qituvchi emassiz.")
         return
 
@@ -63,5 +71,5 @@ async def removeslot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     slot_id = int(context.args[0])
-    remove_slot(slot_id, update.effective_user.id)
+    remove_slot(slot_id, uid)
     await update.message.reply_text(f"✅ Slot #{slot_id} o'chirildi.")
