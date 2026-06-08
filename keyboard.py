@@ -4,7 +4,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram import KeyboardButton, ReplyKeyboardMarkup
 
 
-def main_menu_reply(is_admin=False):
+def main_menu_reply(is_admin=False, is_teacher=False):
     """Persistent reply keyboard at bottom of chat."""
     if is_admin:
         # Admin sees ONLY admin panel
@@ -13,6 +13,12 @@ def main_menu_reply(is_admin=False):
             [KeyboardButton("🔄 Doimiy slot qo'shish"), KeyboardButton("📋 Doimiy slotlarim")],
             [KeyboardButton("👨‍🏫 O'qituvchi qo'shish"), KeyboardButton("👥 O'qituvchilar")],
             [KeyboardButton("📊 Barcha bandlovlar")],
+        ]
+    elif is_teacher:
+        # Teacher sees teacher panel
+        rows = [
+            [KeyboardButton("➕ Yangi slot"), KeyboardButton("📊 Slotlarim")],
+            [KeyboardButton("🔄 Doimiy slot qo'shish"), KeyboardButton("📋 Doimiy slotlarim")],
         ]
     else:
         # Students see only student options

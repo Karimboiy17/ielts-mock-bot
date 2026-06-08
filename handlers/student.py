@@ -46,7 +46,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     await update.message.reply_text(
         text,
-        reply_markup=main_menu_reply(is_admin=admin),
+        reply_markup=main_menu_reply(is_admin=admin, is_teacher=is_teacher(uid)),
         parse_mode="Markdown",
     )
 
