@@ -43,7 +43,8 @@ def admin_reply_keyboard(lang="uz"):
              KeyboardButton(t("menu_teachers", lang))],
             [KeyboardButton(t("menu_all_bookings", lang)),
              KeyboardButton(t("menu_pending_payments", lang))],
-        ],
+            [KeyboardButton(t("menu_checksearch", lang))],
+            ],
         resize_keyboard=True,
     )
 

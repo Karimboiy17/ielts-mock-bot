@@ -1,6 +1,6 @@
 """IELTS Zone Mock Booking Bot — trilingual, payment receipts, Google Sheets sync."""
 import time
-from telegram import Update
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters,
@@ -222,6 +222,19 @@ async def handle_menu_text(update: Update, context):
                     )
             except Exception as e:
                 logger.error("Cannot show payment %s: %s", p["id"], e)
+    elif text == t("menu_checksearch", lang):
+        if not is_admin(uid):
+            await update.message.reply_text(t("admin_only", lang))
+            return
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📅 Bugungi", callback_data="check_today")],
+            [InlineKeyboardButton("📆 Shu hafta", callback_data="check_week")],
+            [InlineKeyboardButton("🗓 Shu oy", callback_data="check_month")],
+        ])
+        await update.message.reply_text(
+            "🔍 Qaysi davrdagi cheklarni ko'rmoqchisiz?",
+            reply_markup=kb,
+        )
 
 
 # ─── Language selection handler ──────────────────────
@@ -531,19 +544,64 @@ def main():
             return
         args = context.args
         if not args:
-            await update.message.reply_text(
-                "🔍 Format: `/checkquery <ism|oy|sana>`\n\n"
-                "Masalan:\n"
-                "`/checkquery Karimboy`\n"
-                "`/checkquery 2026-06`\n"
-                "`/checkquery 2026-06-15`",
-                parse_mode="Markdown",
-            )
+            # No args: show inline buttons for quick periods
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("📅 Bugungi", callback_data="check_today")],
+                [InlineKeyboardButton("📆 Shu hafta", callback_data="check_week")],
+                [InlineKeyboardButton("🗓 Shu oy", callback_data="check_month")],
+            ])
+            await update.message.reply_text("🔍 Qaysi davrdagi cheklarni ko'rmoqchisiz?", reply_markup=kb)
             return
         query_text = " ".join(args).strip()
         results = find_checks_by_query(query_text)
+        await _send_check_results(update, context, uid, results, query_text)
+
+    app.add_handler(CommandHandler("checkquery", checkquery_cmd))
+    app.add_handler(CommandHandler("checkq", checkquery_cmd))  # Short alias
+
+    # Check period handler (today/week/month)
+    async def handle_check_period(update: Update, context):
+        query = update.callback_query
+        await query.answer()
+        uid = query.from_user.id
+        lang = get_language(uid)
+        if uid not in ADMIN_IDS:
+            await query.message.reply_text(t("admin_only", lang))
+            return
+        import datetime
+        today = datetime.date.today()
+        action = query.data
+        if action == "check_today":
+            period, query_text = "bugungi", today.isoformat()
+        elif action == "check_week":
+            end = today + datetime.timedelta(days=7)
+            period, query_text = "shu haftadagi", f"FROM_DATE:{today.isoformat()},{end.isoformat()}"
+        elif action == "check_month":
+            period, query_text = "shu oydagi", today.strftime("%Y-%m")
+        else:
+            return
+        results = find_checks_by_query(query_text)
         if not results:
-            await update.message.reply_text("📭 Hech qanday chek topilmadi.")
+            await query.message.reply_text(f"📭 {period} chek topilmadi.")
+            return
+        for r in results:
+            try:
+                await context.bot.copy_message(
+                    chat_id=uid,
+                    from_chat_id=r["chat_id"],
+                    message_id=r["message_id"],
+                    caption=f"👤 {r['student_name']} | 📅 {r['date']} | {r['time']} | {r['teacher_name']}",
+                )
+            except Exception as e:
+                await query.message.reply_text(
+                    f"👤 {r['student_name']} | 📅 {r['date']} | {r['time']} | {r['teacher_name']}\n⚠️ Rasmni qayta yuborib bo'lmadi"
+                )
+
+    app.add_handler(CallbackQueryHandler(handle_check_period, pattern=r"^check_"))
+
+    async def _send_check_results(update, context, uid, results, query_text):
+        if not results:
+            await update.message.reply_text(f"📭 '{query_text}' bo'yicha chek topilmadi.")
             return
         for r in results:
             try:
@@ -557,9 +615,6 @@ def main():
                 await update.message.reply_text(
                     f"👤 {r['student_name']} | 📅 {r['date']} | {r['time']} | {r['teacher_name']}\n⚠️ Rasmni qayta yuborib bo'lmadi"
                 )
-
-    app.add_handler(CommandHandler("checkquery", checkquery_cmd))
-    app.add_handler(CommandHandler("checkq", checkquery_cmd))  # Short alias
 
     # Language selection + unified callback handler
     app.add_handler(CallbackQueryHandler(handle_lang_select))
@@ -579,6 +634,7 @@ def main():
             t("menu_teachers", lang_code),
             t("menu_all_bookings", lang_code),
             t("menu_pending_payments", lang_code),
+            t("menu_checksearch", lang_code),
         ])
 
     app.add_handler(MessageHandler(

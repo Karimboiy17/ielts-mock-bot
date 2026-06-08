@@ -603,11 +603,25 @@ def find_checks_by_query(query):
     Returns list of {student_name, date, time, teacher_name, chat_id, message_id}."""
     conn = get_db()
 
-    is_month = len(query) == 7 and query.count("-") == 1
     is_date = len(query) == 10 and query.count("-") == 2
+    is_range = query.startswith("FROM_DATE:")
+    is_month = len(query) == 7 and query.count("-") == 1
 
-    if is_date:
-        # Search by exact date
+    if is_range:
+        parts = query[10:].split(",")
+        start_date, end_date = parts[0], parts[1]
+        rows = conn.execute(
+            """SELECT b.student_name, s.date, s.time, t2.name as teacher_name,
+                      cf.chat_id, cf.message_id
+               FROM bookings b
+               JOIN slots s ON s.id = b.slot_id
+               JOIN teachers t2 ON t2.id = s.teacher_id
+               JOIN check_forwards cf ON cf.booking_id = b.id
+               WHERE s.date >= ? AND s.date <= ?
+               ORDER BY s.date, s.time""",
+            (start_date, end_date),
+        ).fetchall()
+    elif is_date:
         rows = conn.execute(
             """SELECT b.student_name, s.date, s.time, t2.name as teacher_name,
                       cf.chat_id, cf.message_id
@@ -620,7 +634,6 @@ def find_checks_by_query(query):
             (query,),
         ).fetchall()
     elif is_month:
-        # Search by month (YYYY-MM)
         rows = conn.execute(
             """SELECT b.student_name, s.date, s.time, t2.name as teacher_name,
                       cf.chat_id, cf.message_id

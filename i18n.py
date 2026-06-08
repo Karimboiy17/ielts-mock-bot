@@ -105,6 +105,7 @@ T = {
     "menu_teachers": {"uz": "👥 O'qituvchilar", "en": "👥 Teachers", "ru": "👥 Учителя"},
     "menu_all_bookings": {"uz": "📊 Barcha bandlovlar", "en": "📊 All Bookings", "ru": "📊 Все брони"},
     "menu_pending_payments": {"uz": "💳 To'lov tasdiqlash", "en": "💳 Approve Payments", "ru": "💳 Подтвердить оплату"},
+    "menu_checksearch": {"uz": "🔍 Chek qidirish", "en": "🔍 Find Checks", "ru": "🔍 Поиск чеков"},
 
     # Slot picking
     "pick_date": {"uz": "📅 *Slot sanasini tanlang:*", "en": "📅 *Pick a date:*", "ru": "📅 *Выберите дату:*"},
