@@ -1,8 +1,12 @@
-from telegram import Update
+"""Teacher handlers — slot management, 3-language."""
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 
-from db import is_teacher, add_slot, get_teacher_slots, remove_slot, add_teacher
-from config import ADMIN_IDS
+from db import (
+    is_teacher, add_slot, get_teacher_slots, remove_slot, add_teacher, get_language,
+)
+from config import ADMIN_IDS, TEACHER_IDS
+from i18n import t
 
 
 def is_admin(user_id):
@@ -10,8 +14,7 @@ def is_admin(user_id):
 
 
 def _ensure_teacher(uid, name="Admin"):
-    """Auto-register admin as teacher if not already."""
-    if not is_teacher(uid):
+    if uid in TEACHER_IDS and not is_teacher(uid):
         add_teacher(uid, name)
         return True
     return False
@@ -19,11 +22,12 @@ def _ensure_teacher(uid, name="Admin"):
 
 async def addslot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
+    lang = get_language(uid)
+
     if not is_teacher(uid) and not is_admin(uid):
-        await update.message.reply_text("⛔ Siz o'qituvchi emassiz. Adminga murojaat qiling.")
+        await update.message.reply_text(t("teacher_only", lang))
         return
 
-    # Auto-register admin as teacher
     if is_admin(uid):
         name = update.effective_user.full_name or "Admin"
         _ensure_teacher(uid, name)
@@ -31,8 +35,7 @@ async def addslot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if len(args) < 2:
         await update.message.reply_text(
-            "📝 Format: `/addslot YYYY-MM-DD HH:MM`\n"
-            "Masalan: `/addslot 2026-06-15 14:00`",
+            "📝 Format: `/addslot YYYY-MM-DD HH:MM`\nMasalan: `/addslot 2026-06-15 14:00`",
             parse_mode="Markdown",
         )
         return
@@ -44,45 +47,47 @@ async def addslot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def myslots_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
+    lang = get_language(uid)
+
     if not is_teacher(uid) and not is_admin(uid):
-        await update.message.reply_text("⛔ Siz o'qituvchi emassiz.")
+        await update.message.reply_text(t("teacher_only", lang))
         return
+
+    if is_admin(uid):
+        _ensure_teacher(uid, update.effective_user.full_name or "Admin")
 
     slots = get_teacher_slots(uid)
     if not slots:
-        await update.message.reply_text("📭 Sizda hozircha slot yo'q.")
+        await update.message.reply_text(t("no_slots", lang))
         return
 
-    msg = "*📅 Sizning slotlaringiz:*\n\n"
+    text = t("your_slots", lang)
+    buttons = []
     for s in slots:
-        if s["status"] == "available":
-            icon = "🟢"
-        elif s["status"] == "pending":
-            icon = "🟡"
-        elif s["status"] == "booked":
-            icon = "🔴"
-        else:
-            icon = "⚪"
+        st = t("status_available", lang) if s["status"] == "available" else t("status_booked", lang)
+        if s["status"] == "pending":
+            st = t("status_pending", lang)
+        text += f"• {s['date']} {s['time']} — {st}\n"
 
-        student = f" — {s['student_name']}" if s["student_name"] else ""
-        msg += f"{icon} `{s['date']}` `{s['time']}`{student} (ID: {s['id']})\n"
-    msg += "\n🟢=Bo'sh  🟡=Kutilmoqda  🔴=Band"
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    await update.message.reply_text(text, parse_mode="Markdown")
 
 
 async def removeslot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
+    lang = get_language(uid)
+
     if not is_teacher(uid) and not is_admin(uid):
-        await update.message.reply_text("⛔ Siz o'qituvchi emassiz.")
+        await update.message.reply_text(t("teacher_only", lang))
         return
 
-    if not context.args:
-        await update.message.reply_text(
-            "📝 Format: `/removeslot <slot_id>`\n"
-            "Slot ID larni ko'rish uchun /myslots"
-        )
+    if is_admin(uid):
+        _ensure_teacher(uid, update.effective_user.full_name or "Admin")
+
+    args = context.args
+    if not args or not args[0].isdigit():
+        await update.message.reply_text("📝 `/removeslot ID` — ID ni ko'rish uchun `/myslots`")
         return
 
-    slot_id = int(context.args[0])
+    slot_id = int(args[0])
     remove_slot(slot_id, uid)
-    await update.message.reply_text(f"✅ Slot #{slot_id} o'chirildi.")
+    await update.message.reply_text(f"🗑 Slot o'chirildi: {slot_id}")

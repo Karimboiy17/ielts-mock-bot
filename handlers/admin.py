@@ -1,8 +1,12 @@
+"""Admin handlers — add/remove teachers, payment management."""
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from db import (
+    is_teacher, add_teacher, get_language,
+)
 from config import ADMIN_IDS
-from db import add_teacher, remove_teacher_db
+from i18n import t
 
 
 def is_admin(user_id):
@@ -10,76 +14,68 @@ def is_admin(user_id):
 
 
 async def addteacher_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("⛔ Faqat admin uchun.")
+    uid = update.effective_user.id
+    lang = get_language(uid)
+
+    if not is_admin(uid):
+        await update.message.reply_text(t("admin_only", lang))
         return
 
-    # Use from reply if available, otherwise accept /addteacher @username Ism
+    args = context.args
+    target_name = ""
+    target_id = None
+    target_username = ""
+
+    # Try reply
     if update.message.reply_to_message:
-        target = update.message.reply_to_message.from_user
-        name = " ".join(context.args) if context.args else target.full_name
-        username = f"@{target.username}" if target.username else ""
-        add_teacher(target.id, name, username)
-        await update.message.reply_text(
-            f"✅ O'qituvchi qo'shildi: {name} ({username})\n"
-            f"Telegram ID: `{target.id}`",
-            parse_mode="Markdown",
-        )
-        return
+        target_id = update.message.reply_to_message.from_user.id
+        target_name = " ".join(args) if args else update.message.reply_to_message.from_user.full_name or "Teacher"
+        target_username = update.message.reply_to_message.from_user.username or ""
+    elif len(args) >= 1:
+        if args[0].startswith("@"):
+            target_username = args[0].lstrip("@")
+            target_name = " ".join(args[1:]) if len(args) > 1 else target_username
+        elif args[0].isdigit():
+            target_id = int(args[0])
+            target_name = " ".join(args[1:]) if len(args) > 1 else "Teacher"
+        else:
+            await update.message.reply_text(
+                "📝 Format: `/addteacher @username Ismi` yoki reply qilib `/addteacher Ismi`",
+                parse_mode="Markdown",
+            )
+            return
 
-    # Direct mode: /addteacher @username Ism  or  /addteacher 123456 Ism
-    if not context.args:
+    if target_id:
+        add_teacher(target_id, target_name, target_username)
         await update.message.reply_text(
-            "📝 O'qituvchi qo'shish uchun:\n\n"
-            "• O'qituvchining xabariga reply qilib `/addteacher Ism` yozing\n"
-            "• Yoki `/addteacher @username Ism`\n"
-            "• Yoki `/addteacher 123456789 Ism` (Telegram ID)\n\n"
-            "Masalan: `/addteacher @karim Karimboy`",
-            parse_mode="Markdown",
-        )
-        return
-
-    # Parse: first arg is @username or numeric ID
-    first_arg = context.args[0]
-    name = " ".join(context.args[1:]) if len(context.args) > 1 else first_arg.lstrip("@")
-
-    if first_arg.startswith("@"):
-        # By username - we need to look up ID (approximate)
-        username = first_arg
-        # We can't look up by @username without a message from them
-        # So store with username only, ID=0 as placeholder
-        add_teacher(0, name, username)
-        await update.message.reply_text(
-            f"✅ O'qituvchi saqlandi: {name} ({username})\n"
-            "⚠️ ID aniqlash uchun o'qituvchi botga xabar yuborishi kerak."
-        )
-    elif first_arg.isdigit():
-        tid = int(first_arg)
-        add_teacher(tid, name)
-        await update.message.reply_text(
-            f"✅ O'qituvchi qo'shildi: {name}\n"
-            f"Telegram ID: `{tid}`",
+            t("added_teacher", lang) + f" — {target_name}",
             parse_mode="Markdown",
         )
     else:
         await update.message.reply_text(
-            "❌ Format noto'g'ri. `/addteacher @username Ism` yoki `/addteacher 123456 Ism`\n"
-            "Masalan: `/addteacher @karim Karimboy`",
-            parse_mode="Markdown",
+            "⚠️ Avval botga xabar yozgan o'qituvchining xabariga reply qiling, yoki Telegram ID sini bering."
         )
 
 
 async def removeteacher_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("⛔ Faqat admin uchun.")
+    uid = update.effective_user.id
+    lang = get_language(uid)
+
+    if not is_admin(uid):
+        await update.message.reply_text(t("admin_only", lang))
         return
 
-    if not update.message.reply_to_message:
-        await update.message.reply_text(
-            "📝 O'qituvchining xabariga reply qilib `/removeteacher` yozing."
-        )
+    from db import remove_teacher_db, get_all_teachers
+
+    args = context.args
+    if not args or not args[0].isdigit():
+        teachers = get_all_teachers()
+        msg = t("all_teachers_title", lang)
+        for teacher in teachers:
+            msg += f"/removeteacher {teacher['telegram_id']} — {teacher['name']}\n"
+        await update.message.reply_text(msg, parse_mode="Markdown")
         return
 
-    target = update.message.reply_to_message.from_user
-    remove_teacher_db(target.id)
-    await update.message.reply_text(f"✅ O'qituvchi o'chirildi: {target.full_name}")
+    tid = int(args[0])
+    remove_teacher_db(tid)
+    await update.message.reply_text(f"🗑 O'qituvchi o'chirildi: {tid}")

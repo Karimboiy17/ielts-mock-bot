@@ -1,262 +1,141 @@
+"""Student handlers — trilingual, with payment flow."""
 from telegram import Update
 from telegram.ext import ContextTypes
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
 from db import (
     get_available_slots, request_booking, get_student_bookings,
-    cancel_booking, get_teacher_by_id, confirm_booking, reject_booking,
-    is_teacher,
+    cancel_booking, get_language,
 )
-from keyboard import main_menu, main_menu_reply, slots_keyboard, cancel_keyboard, teacher_confirm_keyboard
-from config import ADMIN_IDS
-
-
-def is_admin(user_id):
-    return user_id in ADMIN_IDS
+from i18n import t
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    admin = is_admin(uid)
-    text = (
-        "🎓 *IELTS Zone | Mock Imtihon Bandlov Boti*\n\n"
-        "_Mock imtihon uchun o'qituvchidan vaqt band qilish tizimi._\n\n"
-        "📌 *Qanday ishlaydi:*\n"
-        "1️⃣ \"📋 Mavjud slotlar\" — bo'sh vaqtlarni ko'ring\n"
-        "2️⃣ Kerakli vaqtni tanlang — so'rov o'qituvchiga boradi\n"
-        "3️⃣ O'qituvchi tasdiqlasa — bandlov tayyor ✅\n"
-        "4️⃣ \"📅 Mening bandlovlarim\" — bandlovlaringizni ko'ring\n"
-        "5️⃣ \"❌ Bandlovni bekor qilish\" — kerak bo'lsa bekor qiling\n\n"
-        "⏱ _Bandlov 24 soat ichida tasdiqlanadi._\n"
-    )
-    if admin:
-        text = (
-            "👑 *IELTS Zone | Admin Panel*\n\n"
-            "➕ *Yangi slot* — bir martalik slot qo'shish\n"
-            "🔄 *Doimiy slot* — har hafta takrorlanadigan (masalan: dushanba 14:00)\n"
-            "📊 *Slotlarim* — o'zingizga tegishli slotlar\n"
-            "👨‍🏫 *O'qituvchi qo'shish* — yangi mock oluvchi qo'shish\n"
-            "📋 *Barcha bandlovlar* — barcha bandlovlarni ko'rish\n\n"
-            "_O'qituvchi qo'shish: o'qituvchining xabariga reply qilib `/addteacher Ism` yozing._"
-        )
-    if is_teacher(uid) and not admin:
-        text = (
-            "👨‍🏫 *IELTS Zone | O'qituvchi Panel*\n\n"
-            "📊 *Slotlarim* — band qilingan va bo'sh slotlaringiz\n\n"
-            "_O'quvchi bandlov so'rov yuborsa — shu chatga tasdiqlash xabari keladi._"
-        )
+    """Handled in bot.py — this is a fallback."""
+    from keyboard import lang_picker_keyboard
     await update.message.reply_text(
-        text,
-        reply_markup=main_menu_reply(is_admin=admin, is_teacher=is_teacher(uid)),
-        parse_mode="Markdown",
+        "🇺🇿 Tilni tanlang / 🇬🇧 Choose language / 🇷🇺 Выберите язык",
+        reply_markup=lang_picker_keyboard(),
     )
 
 
 async def slots_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Shows available slots with inline buttons for booking."""
-    available = get_available_slots()
-    if not available:
-        await update.message.reply_text(
-            "❌ Hozircha band qilish uchun ochiq slot yo'q.",
-            reply_markup=main_menu_reply(),
-        )
+    uid = update.effective_user.id
+    lang = get_language(uid)
+    slots = get_available_slots()
+    if not slots:
+        await update.message.reply_text(t("no_slots", lang))
         return
+
+    text = t("click_to_book", lang) + "\n\n"
+    buttons = []
+    for s in slots:
+        label = f"{s['date']} {s['time']} — {s['teacher_name']}"
+        cb = f"book_{s['id']}"
+        buttons.append([InlineKeyboardButton(label, callback_data=cb)])
+
     await update.message.reply_text(
-        "📋 *Mavjud slotlar:*\n\nBirini tanlang — so'rov o'qituvchiga boradi.",
-        reply_markup=slots_keyboard(available),
-        parse_mode="Markdown",
+        text,
+        reply_markup=InlineKeyboardMarkup(buttons),
     )
 
 
 async def mybookings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    bookings = get_student_bookings(update.effective_user.id)
+    uid = update.effective_user.id
+    lang = get_language(uid)
+    bookings = get_student_bookings(uid)
     if not bookings:
-        await update.message.reply_text(
-            "📭 Sizda hozircha bandlov yo'q.",
-            reply_markup=main_menu_reply(),
-        )
+        await update.message.reply_text(t("no_bookings", lang))
         return
-    msg = "*📅 Sizning bandlovlaringiz:*\n\n"
-    status_map = {
-        "pending": "⏳",
-        "accepted": "✅",
-        "rejected": "❌",
+
+    text = t("your_bookings", lang)
+    status_icons = {
+        "pending": {"uz": "⏳ Kutilmoqda", "en": "⏳ Pending", "ru": "⏳ Ожидает"},
+        "accepted": {"uz": "✅ Tasdiqlangan", "en": "✅ Confirmed", "ru": "✅ Подтверждено"},
+        "rejected": {"uz": "❌ Rad etilgan", "en": "❌ Rejected", "ru": "❌ Отклонено"},
     }
     for b in bookings:
-        icon = status_map.get(b["status"], "❓")
-        msg += f"{icon} {b['teacher_name']} — {b['date']} {b['time']}\n"
-    msg += "\n❌ Bekor qilish uchun /cancel"
-    await update.message.reply_text(
-        msg,
-        reply_markup=main_menu_reply(),
-        parse_mode="Markdown",
-    )
+        icon = status_icons.get(b["status"], {"uz": "❓", "en": "❓", "ru": "❓"})
+        st = icon.get(lang, icon["uz"])
+        text += f"{st} — {b['date']} {b['time']} ({b['teacher_name']})\n"
+
+    await update.message.reply_text(text, parse_mode="Markdown")
 
 
 async def cancel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    bookings = get_student_bookings(update.effective_user.id)
+    uid = update.effective_user.id
+    lang = get_language(uid)
+    bookings = get_student_bookings(uid)
     if not bookings:
-        await update.message.reply_text(
-            "📭 Bekor qilish uchun bandlov yo'q.",
-            reply_markup=main_menu_reply(),
-        )
+        await update.message.reply_text(t("no_bookings_to_cancel", lang))
         return
+
+    text = t("cancel_prompt", lang) + "\n\n"
+    buttons = []
+    for b in bookings:
+        label = f"/cancel_{b['id']} — {b['date']} {b['time']} ({b['teacher_name']})"
+        cb = f"cancel_{b['id']}"
+        buttons.append([InlineKeyboardButton(label, callback_data=cb)])
+
+    text += t("cancel_usage", lang)
     await update.message.reply_text(
-        "Qaysi bandlovni bekor qilasiz?",
-        reply_markup=cancel_keyboard(bookings),
+        text,
+        reply_markup=InlineKeyboardMarkup(buttons),
     )
 
 
-# ─── Single callback handler for ALL inline buttons ─────
-
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle student inline button callbacks."""
     query = update.callback_query
-    await query.answer()
     data = query.data
-    user = update.effective_user
+    uid = update.effective_user.id
+    lang = get_language(uid)
 
-    if data == "slots":
-        available = get_available_slots()
-        if not available:
-            await query.edit_message_text(
-                "❌ Hozircha ochiq slot yo'q.",
-                reply_markup=main_menu(),
-            )
-        else:
-            await query.edit_message_text(
-                "📋 *Mavjud slotlar:*\n\nBirini tanlang — so'rov o'qituvchiga boradi.",
-                reply_markup=slots_keyboard(available),
-                parse_mode="Markdown",
-            )
+    # Book a slot
+    if data.startswith("book_"):
+        slot_id = int(data.replace("book_", ""))
+        student_name = update.effective_user.full_name or "Student"
+        student_username = update.effective_user.username or ""
 
-    elif data.startswith("book_"):
-        slot_id = int(data.split("_")[1])
-        name = user.full_name or user.username or str(user.id)
-        username = f"@{user.username}" if user.username else ""
-
-        result = request_booking(slot_id, user.id, name, username)
-        if result is None:
-            await query.edit_message_text(
-                "⚠️ Bu slot allaqachon band qilingan yoki mavjud emas.",
-                reply_markup=main_menu(),
-            )
+        result = request_booking(slot_id, uid, student_name, student_username)
+        if not result:
+            await query.answer("⚠️ Bu slot allaqachon band!", show_alert=True)
+            await query.edit_message_reply_markup(reply_markup=None)
             return
 
-        # Notify teacher
-        teacher = get_teacher_by_id(result["teacher_db_id"])
-        if teacher:
-            msg = (
-                f"📩 *Yangi mock so'rovi!*\n\n"
-                f"👤 O'quvchi: {name}"
-            )
-            if username:
-                msg += f" ({username})"
-            msg += f"\n🆔 Booking ID: `{result['booking_id']}`"
-            try:
-                await context.bot.send_message(
-                    chat_id=teacher["telegram_id"],
-                    text=msg,
-                    reply_markup=teacher_confirm_keyboard(result["booking_id"], name),
-                    parse_mode="Markdown",
-                )
-            except Exception:
-                pass  # teacher may have blocked bot; admin can follow up
+        # Get slot info for the message
+        from db import get_db
+        conn = get_db()
+        slot = conn.execute(
+            "SELECT s.date, s.time, t.name as teacher_name FROM slots s "
+            "JOIN teachers t ON t.id = s.teacher_id WHERE s.id = ?",
+            (slot_id,),
+        ).fetchone()
+        conn.close()
+
+        if slot:
+            text = t("payment_required", lang,
+                     date=slot["date"], time=slot["time"], teacher=slot["teacher_name"])
+        else:
+            text = t("payment_received", lang)
 
         await query.edit_message_text(
-            "⏳ *So'rov yuborildi!*\n\n"
-            "O'qituvchi tasdiqlagandan keyin sizga xabar keladi.",
-            reply_markup=main_menu(),
+            text,
             parse_mode="Markdown",
         )
+        await query.answer()
 
-    elif data == "mybookings":
-        bookings = get_student_bookings(user.id)
-        if not bookings:
-            await query.edit_message_text(
-                "📭 Sizda hozircha bandlov yo'q.",
-                reply_markup=main_menu(),
-            )
-        else:
-            msg = "*📅 Sizning bandlovlaringiz:*\n\n"
-            status_map = {"pending": "⏳", "accepted": "✅", "rejected": "❌"}
-            for b in bookings:
-                icon = status_map.get(b["status"], "❓")
-                msg += f"{icon} {b['teacher_name']} — {b['date']} {b['time']}\n"
-            await query.edit_message_text(
-                msg,
-                reply_markup=main_menu(),
-                parse_mode="Markdown",
-            )
-
-    elif data == "cancel_menu":
-        bookings = get_student_bookings(user.id)
-        if not bookings:
-            await query.edit_message_text(
-                "📭 Bekor qilish uchun bandlov yo'q.",
-                reply_markup=main_menu(),
-            )
-        else:
-            await query.edit_message_text(
-                "Qaysi bandlovni bekor qilasiz?",
-                reply_markup=cancel_keyboard(bookings),
-            )
-
+    # Cancel a booking
     elif data.startswith("cancel_"):
-        booking_id = int(data.split("_")[1])
-        success = cancel_booking(booking_id, user.id)
-        if success:
+        booking_id = int(data.replace("cancel_", ""))
+        if cancel_booking(booking_id, uid):
             await query.edit_message_text(
-                "✅ Bandlov bekor qilindi.",
-                reply_markup=main_menu(),
+                t("booking_cancelled", lang),
+                parse_mode="Markdown",
             )
         else:
-            await query.edit_message_text(
-                "⚠️ Bekor qilib bo'lmadi.",
-                reply_markup=main_menu(),
-            )
+            await query.answer("⚠️ Bekor qilib bo'lmadi!", show_alert=True)
+        await query.answer()
 
-    elif data.startswith("accept_"):
-        booking_id = int(data.split("_")[1])
-        result = confirm_booking(booking_id, user.id)
-        if result is None:
-            await query.edit_message_text(
-                "⚠️ Bu so'rov allaqachon ko'rib chiqilgan yoki sizga tegishli emas.",
-            )
-            return
-        try:
-            await context.bot.send_message(
-                chat_id=result["student_telegram_id"],
-                text="✅ *Bandlovingiz tasdiqlandi!*\n\nO'qituvchi so'rovingizni qabul qildi.",
-                parse_mode="Markdown",
-            )
-        except Exception:
-            pass
-        await query.edit_message_text(
-            f"✅ {result['student_name']} uchun bandlov tasdiqlandi.",
-        )
-
-    elif data.startswith("reject_"):
-        booking_id = int(data.split("_")[1])
-        result = reject_booking(booking_id, user.id)
-        if result is None:
-            await query.edit_message_text(
-                "⚠️ Bu so'rov allaqachon ko'rib chiqilgan yoki sizga tegishli emas.",
-            )
-            return
-        try:
-            await context.bot.send_message(
-                chat_id=result["student_telegram_id"],
-                text="❌ *Bandlovingiz rad etildi.*\n\nO'qituvchi so'rovingizni qabul qilmadi. Qaytadan urinib ko'ring.",
-                parse_mode="Markdown",
-            )
-        except Exception:
-            pass
-        await query.edit_message_text(
-            f"❌ {result['student_name']} uchun bandlov rad etildi.",
-        )
-
-    elif data == "back_menu":
-        await query.edit_message_text(
-            "🏠 *Bosh menyu:*",
-            reply_markup=main_menu(),
-            parse_mode="Markdown",
-        )
+    else:
+        await query.answer()

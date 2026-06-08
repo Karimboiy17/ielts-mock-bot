@@ -1,160 +1,169 @@
+"""Keyboards — trilingual (uz/en/ru)."""
 from datetime import date, timedelta
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from telegram import KeyboardButton, ReplyKeyboardMarkup
-
-
-def main_menu_reply(is_admin=False, is_teacher=False):
-    """Persistent reply keyboard at bottom of chat."""
-    if is_admin:
-        # Admin sees ONLY admin panel
-        rows = [
-            [KeyboardButton("➕ Yangi slot"), KeyboardButton("📊 Slotlarim")],
-            [KeyboardButton("🔄 Doimiy slot qo'shish"), KeyboardButton("📋 Doimiy slotlarim")],
-            [KeyboardButton("👨‍🏫 O'qituvchi qo'shish"), KeyboardButton("👥 O'qituvchilar")],
-            [KeyboardButton("📊 Barcha bandlovlar")],
-        ]
-    elif is_teacher:
-        # Teacher sees teacher panel
-        rows = [
-            [KeyboardButton("➕ Yangi slot"), KeyboardButton("📊 Slotlarim")],
-            [KeyboardButton("🔄 Doimiy slot qo'shish"), KeyboardButton("📋 Doimiy slotlarim")],
-        ]
-    else:
-        # Students see only student options
-        rows = [
-            [KeyboardButton("📋 Mavjud slotlar")],
-            [KeyboardButton("📅 Mening bandlovlarim"), KeyboardButton("❌ Bandlovni bekor qilish")],
-        ]
-    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
+from i18n import LANGS, t, get_lang
+from config import ADMIN_IDS
+from db import is_teacher
 
 
-def main_menu(is_admin=False):
-    """Inline keyboard (used for back navigation)."""
+# ─── Language Picker ──────────────────────────────────
+
+def lang_picker_keyboard():
     buttons = [
-        [InlineKeyboardButton("📋 Mavjud slotlar", callback_data="slots")],
-        [InlineKeyboardButton("📅 Mening bandlovlarim", callback_data="mybookings")],
-        [InlineKeyboardButton("❌ Bandlovni bekor qilish", callback_data="cancel_menu")],
+        [InlineKeyboardButton(label, callback_data=f"lang_{code}")]
+        for label, code in LANGS.items()
     ]
-    if is_admin:
-        buttons.append([InlineKeyboardButton("🔙 Orqaga", callback_data="back_menu")])
     return InlineKeyboardMarkup(buttons)
 
 
-def date_picker_keyboard():
-    """Show next 7 days for slot date selection."""
+# ─── Student Reply Keyboard ──────────────────────────
+
+def student_reply_keyboard(lang="uz"):
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(t("menu_slots", lang))],
+            [KeyboardButton(t("menu_mybookings", lang)),
+             KeyboardButton(t("menu_cancel", lang))],
+        ],
+        resize_keyboard=True,
+    )
+
+
+# ─── Admin Reply Keyboard ────────────────────────────
+
+def admin_reply_keyboard(lang="uz"):
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(t("menu_newslot", lang)),
+             KeyboardButton(t("menu_myslots", lang))],
+            [KeyboardButton(t("menu_recurring", lang)),
+             KeyboardButton(t("menu_myrecurring", lang))],
+            [KeyboardButton(t("menu_addteacher", lang)),
+             KeyboardButton(t("menu_teachers", lang))],
+            [KeyboardButton(t("menu_all_bookings", lang)),
+             KeyboardButton(t("menu_pending_payments", lang))],
+        ],
+        resize_keyboard=True,
+    )
+
+
+# ─── Teacher Reply Keyboard ──────────────────────────
+
+def teacher_reply_keyboard(lang="uz"):
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(t("menu_newslot", lang)),
+             KeyboardButton(t("menu_myslots", lang))],
+            [KeyboardButton(t("menu_recurring", lang)),
+             KeyboardButton(t("menu_myrecurring", lang))],
+        ],
+        resize_keyboard=True,
+    )
+
+
+# ─── Date Picker ─────────────────────────────────────
+
+def date_picker_keyboard(lang="uz"):
     today = date.today()
     buttons = []
     for i in range(7):
         d = today + timedelta(days=i)
-        label = f"📅 {d.strftime('%d %b (%a)')}"
-        buttons.append([InlineKeyboardButton(label, callback_data=f"addslot_date_{d.isoformat()}")])
-    buttons.append([InlineKeyboardButton("🔙 Orqaga", callback_data="back_menu")])
+        label = d.strftime("%d.%m")
+        cb = f"addslot_date_{d.strftime('%Y-%m-%d')}"
+        buttons.append([InlineKeyboardButton(label, callback_data=cb)])
     return InlineKeyboardMarkup(buttons)
 
 
-def time_picker_keyboard(selected_date):
-    """Show time slots for a selected date."""
-    times = ["09:00", "10:00", "11:00", "12:00", "14:00", "15:00", "16:00", "17:00", "18:00"]
+# ─── Time Picker ─────────────────────────────────────
+
+TIMES = ["09:00", "10:00", "11:00", "12:00", "14:00", "15:00", "16:00", "17:00", "18:00"]
+
+
+def time_picker_keyboard(selected_date, lang="uz"):
     buttons = []
     row = []
-    for t in times:
-        row.append(InlineKeyboardButton(t, callback_data=f"addslot_time_{selected_date}_{t}"))
+    for tm in TIMES:
+        row.append(InlineKeyboardButton(
+            tm,
+            callback_data=f"addslot_time_{selected_date}_{tm}",
+        ))
         if len(row) == 3:
             buttons.append(row)
             row = []
     if row:
         buttons.append(row)
-    buttons.append([InlineKeyboardButton("🔙 Boshqa sana", callback_data="addslot_pick_date")])
-    buttons.append([InlineKeyboardButton("🔙 Orqaga", callback_data="back_menu")])
     return InlineKeyboardMarkup(buttons)
 
 
+# ─── Day Picker (Recurring) ──────────────────────────
 
-def slots_keyboard(slots):
+HEADER_DAYS_uz = ["Du", "Se", "Ch", "Pa", "Ju", "Sh", "Ya"]
+HEADER_DAYS_en = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+HEADER_DAYS_ru = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+
+HEADER_DAYS_BY_LANG = {"uz": HEADER_DAYS_uz, "en": HEADER_DAYS_en, "ru": HEADER_DAYS_ru}
+
+
+def day_picker_keyboard(lang="uz"):
+    days = HEADER_DAYS_BY_LANG.get(lang, HEADER_DAYS_uz)
     buttons = []
-    for s in slots:
-        label = f"{s['teacher_name']} | {s['date']} | {s['time']}"
-        buttons.append([
-            InlineKeyboardButton(f"📌 {label}", callback_data=f"book_{s['id']}")
-        ])
-    buttons.append([InlineKeyboardButton("🔙 Orqaga", callback_data="back_menu")])
+    row = []
+    for i, label in enumerate(days):
+        row.append(InlineKeyboardButton(label, callback_data=f"recur_day_{i}"))
+        if len(row) == 4:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
     return InlineKeyboardMarkup(buttons)
 
 
-def cancel_keyboard(bookings):
+def time_picker_recurring_keyboard(day_of_week, lang="uz"):
     buttons = []
-    for b in bookings:
-        label = f"❌ {b['teacher_name']} | {b['date']} | {b['time']}"
-        buttons.append([
-            InlineKeyboardButton(label, callback_data=f"cancel_{b['id']}")
-        ])
-    buttons.append([InlineKeyboardButton("🔙 Orqaga", callback_data="back_menu")])
+    row = []
+    for tm in TIMES:
+        row.append(InlineKeyboardButton(
+            tm,
+            callback_data=f"recur_time_{day_of_week}_{tm}",
+        ))
+        if len(row) == 3:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
     return InlineKeyboardMarkup(buttons)
 
 
-def teacher_confirm_keyboard(booking_id, student_name):
+def recurring_list_keyboard(patterns, lang="uz"):
+    buttons = []
+    from db import DAY_NAMES_I18N
+    day_names = DAY_NAMES_I18N.get(lang, DAY_NAMES_I18N["uz"])
+    for p in patterns:
+        day_name = day_names.get(p["day_of_week"], str(p["day_of_week"]))
+        label = f"🗑 {day_name} {p['time']}"
+        cb = f"recur_del_{p['id']}"
+        buttons.append([InlineKeyboardButton(label, callback_data=cb)])
+    return InlineKeyboardMarkup(buttons)
+
+
+# ─── Booking confirm / reject ────────────────────────
+
+def booking_confirm_keyboard(booking_id, lang="uz"):
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✅ Tasdiqlash", callback_data=f"accept_{booking_id}"),
-            InlineKeyboardButton("❌ Rad etish", callback_data=f"reject_{booking_id}"),
+            InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{booking_id}"),
+            InlineKeyboardButton("❌ Reject", callback_data=f"reject_{booking_id}"),
         ]
     ])
 
 
-def back_button():
+# ─── Payment approve / reject ────────────────────────
+
+def payment_approve_keyboard(booking_id, lang="uz"):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔙 Orqaga", callback_data="back_menu")]
+        [
+            InlineKeyboardButton(t("payment_approve_btn", lang), callback_data=f"payok_{booking_id}"),
+            InlineKeyboardButton(t("payment_reject_btn", lang), callback_data=f"payno_{booking_id}"),
+        ]
     ])
-
-
-# ── Recurring Patterns ────────────────────────────────────
-
-def day_picker_keyboard():
-    """Pick a day of the week for recurring slots."""
-    days = [
-        ("Dushanba", 0), ("Seshanba", 1), ("Chorshanba", 2),
-        ("Payshanba", 3), ("Juma", 4), ("Shanba", 5), ("Yakshanba", 6),
-    ]
-    buttons = []
-    row = []
-    for name, dow in days:
-        row.append(InlineKeyboardButton(name, callback_data=f"recur_day_{dow}"))
-        if len(row) == 2:
-            buttons.append(row)
-            row = []
-    if row:
-        buttons.append(row)
-    buttons.append([InlineKeyboardButton("🔙 Orqaga", callback_data="back_menu")])
-    return InlineKeyboardMarkup(buttons)
-
-
-def time_picker_recurring_keyboard(day_of_week):
-    """Pick a time for a recurring pattern."""
-    times = ["09:00", "10:00", "11:00", "12:00", "14:00", "15:00", "16:00", "17:00", "18:00"]
-    buttons = []
-    row = []
-    for t in times:
-        row.append(InlineKeyboardButton(t, callback_data=f"recur_time_{day_of_week}_{t}"))
-        if len(row) == 3:
-            buttons.append(row)
-            row = []
-    if row:
-        buttons.append(row)
-    buttons.append([InlineKeyboardButton("🔙 Boshqa kun", callback_data="recur_pick_day")])
-    buttons.append([InlineKeyboardButton("🔙 Orqaga", callback_data="back_menu")])
-    return InlineKeyboardMarkup(buttons)
-
-
-def recurring_list_keyboard(patterns):
-    """Show recurring patterns with delete option."""
-    from db import DAY_NAMES
-    buttons = []
-    for p in patterns:
-        day_name = DAY_NAMES.get(p["day_of_week"], str(p["day_of_week"]))
-        label = f"🗑 {day_name} {p['time']}"
-        buttons.append([
-            InlineKeyboardButton(label, callback_data=f"recur_del_{p['id']}")
-        ])
-    buttons.append([InlineKeyboardButton("🔙 Orqaga", callback_data="back_menu")])
-    return InlineKeyboardMarkup(buttons)

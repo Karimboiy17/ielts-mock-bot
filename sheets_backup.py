@@ -1,115 +1,164 @@
-"""Google Sheets backup: sync teachers, slots, and bookings."""
-import os
+"""Google Sheets sync — export (backup) and import (startup restore)."""
 import json
+import os
 import logging
-
-import gspread
-from google.oauth2.service_account import Credentials
 
 logger = logging.getLogger(__name__)
 
-SPREADSHEET_ID = "1bOLqLKiDo-Kk9VK5DKz_5tvRs5SAEGwCOJQkZEJTj3A"
+SHEET_ID = "1bOLqLKiDo-Kk9VK5DKz_5tvRs5SAEGwCOJQkZEJTj3A"
 
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive.file",
-]
-
-_gs_client = None
+CRED_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 
 
 def _get_client():
-    global _gs_client
-    if _gs_client is not None:
-        return _gs_client
-
-    key_data = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
-    if not key_data:
-        logger.warning("GOOGLE_SERVICE_ACCOUNT_JSON not set — sheets backup disabled")
+    """Get gspread client from env var or file."""
+    if not CRED_JSON:
+        logger.warning("GOOGLE_SERVICE_ACCOUNT_JSON not set")
+        return None
+    try:
+        import gspread
+        from google.oauth2.service_account import Credentials
+        creds_dict = json.loads(CRED_JSON)
+        creds = Credentials.from_service_account_info(
+            creds_dict,
+            scopes=["https://www.googleapis.com/auth/spreadsheets"],
+        )
+        return gspread.authorize(creds)
+    except Exception as e:
+        logger.error("gspread auth failed: %s", e)
         return None
 
-    info = json.loads(key_data)
-    creds = Credentials.from_service_account_info(info, scopes=SCOPES)
-    _gs_client = gspread.authorize(creds)
-    return _gs_client
 
-
-def _get_or_create_sheet(client, name, headers):
-    """Get worksheet by name, or create it with headers."""
+def _get_sheet():
+    client = _get_client()
+    if not client:
+        return None
     try:
-        sheet = client.open_by_key(SPREADSHEET_ID)
+        return client.open_by_key(SHEET_ID)
+    except Exception as e:
+        logger.error("Cannot open sheet %s: %s", SHEET_ID, e)
+        return None
+
+
+def _ensure_headers(ws, headers):
+    """Ensure first row has the right headers."""
+    try:
+        existing = ws.row_values(1)
     except Exception:
-        logger.error("Cannot open spreadsheet %s", SPREADSHEET_ID)
-        return None
-
-    try:
-        ws = sheet.worksheet(name)
-        return ws
-    except gspread.exceptions.WorksheetNotFound:
-        ws = sheet.add_worksheet(title=name, rows=100, cols=len(headers))
-        ws.append_row(headers)
-        return ws
+        existing = []
+    if not existing or existing != headers:
+        if not existing:
+            ws.insert_row(headers, 1)
+        else:
+            ws.update("A1:Z1", [headers])
 
 
 def sync_teacher(telegram_id, name, username=""):
-    """Add or update a teacher row in Google Sheets."""
+    sh = _get_sheet()
+    if not sh:
+        return
     try:
-        client = _get_client()
-        ws = _get_or_create_sheet(client, "O'qituvchilar", ["ID", "Ism", "Username", "Telegram ID"])
-        if ws is None:
-            return
-
-        # Check if teacher already exists
-        records = ws.get_all_records()
-        for i, row in enumerate(records):
-            if str(row.get("Telegram ID", "")) == str(telegram_id):
-                ws.update(f"A{i+2}:D{i+2}", [[i+1, name, username, str(telegram_id)]])
-                return
-
-        # Add new row
-        new_id = len(records) + 1
-        ws.append_row([new_id, name, username, str(telegram_id)])
-        logger.info("Teacher synced to sheets: %s", name)
-    except Exception as e:
-        logger.error("Failed to sync teacher to sheets: %s", e)
+        ws = sh.worksheet("O'qituvchilar")
+    except Exception:
+        ws = sh.add_worksheet(title="O'qituvchilar", rows=100, cols=10)
+    _ensure_headers(ws, ["Telegram ID", "Ism", "Username", "Qo'shilgan sana"])
+    ws.append_row([str(telegram_id), name, username or "", ""])
 
 
-def sync_slot(slot_id, teacher_name, date_str, time_str, status):
-    """Add a new slot row to Google Sheets."""
+def sync_slot(slot_id, teacher_name, date, time, status):
+    sh = _get_sheet()
+    if not sh:
+        return
     try:
-        client = _get_client()
-        ws = _get_or_create_sheet(client, "Slotlar", ["ID", "O'qituvchi", "Sana", "Vaqt", "Holati"])
-        if ws is None:
-            return
-
-        ws.append_row([slot_id, teacher_name, date_str, time_str, status])
-        logger.info("Slot synced to sheets: %s %s %s", teacher_name, date_str, time_str)
-    except Exception as e:
-        logger.error("Failed to sync slot to sheets: %s", e)
+        ws = sh.worksheet("Slotlar")
+    except Exception:
+        ws = sh.add_worksheet(title="Slotlar", rows=200, cols=10)
+    _ensure_headers(ws, ["Slot ID", "O'qituvchi", "Sana", "Vaqt", "Holati"])
+    ws.append_row([slot_id, teacher_name, date, time, status])
 
 
-def sync_booking(booking_id, student_name, teacher_name, date_str, time_str, status):
-    """Add or update a booking row in Google Sheets."""
+def sync_booking(booking_id, student_name, teacher_name, date, time, status):
+    sh = _get_sheet()
+    if not sh:
+        return
     try:
-        client = _get_client()
-        ws = _get_or_create_sheet(
-            client,
-            "Bandlovlar",
-            ["ID", "O'quvchi", "O'qituvchi", "Sana", "Vaqt", "Holati", "Vaqt"],
-        )
-        if ws is None:
-            return
+        ws = sh.worksheet("Bandlovlar")
+    except Exception:
+        ws = sh.add_worksheet(title="Bandlovlar", rows=500, cols=10)
+    _ensure_headers(ws, ["Booking ID", "O'quvchi", "O'qituvchi", "Sana", "Vaqt", "Holati"])
+    ws.append_row([str(booking_id), student_name, teacher_name, date, time, status])
 
-        records = ws.get_all_records()
-        for i, row in enumerate(records):
-            if row.get("ID") == booking_id:
-                ws.update(
-                    f"A{i+2}:G{i+2}",
-                    [[booking_id, student_name, teacher_name, date_str, time_str, status, ""]],
+
+# ─── Startup Import ───────────────────────────────────
+
+def load_from_sheets():
+    """On startup: read teachers & slots from Google Sheets into SQLite.
+    Returns (teacher_count, slot_count)."""
+    sh = _get_sheet()
+    if not sh:
+        return 0, 0
+
+    import sqlite3
+    from db import DB
+
+    conn = sqlite3.connect(DB)
+    conn.row_factory = sqlite3.Row
+
+    t_count = 0
+    s_count = 0
+
+    # --- Load teachers ---
+    try:
+        ws = sh.worksheet("O'qituvchilar")
+        rows = ws.get_all_records()
+        for r in rows:
+            tid = str(r.get("Telegram ID", "")).strip()
+            name = str(r.get("Ism", "")).strip()
+            username = str(r.get("Username", "")).strip()
+            if tid and name:
+                conn.execute(
+                    "INSERT OR IGNORE INTO teachers (telegram_id, name, username) VALUES (?, ?, ?)",
+                    (int(tid), name, username),
                 )
-                return
-
-        ws.append_row([booking_id, student_name, teacher_name, date_str, time_str, status, ""])
-        logger.info("Booking synced to sheets: %s -> %s", student_name, teacher_name)
+                t_count += 1
+        conn.commit()
     except Exception as e:
-        logger.error("Failed to sync booking to sheets: %s", e)
+        logger.warning("load_from_sheets — teachers: %s", e)
+
+    # --- Load slots ---
+    try:
+        ws = sh.worksheet("Slotlar")
+        rows = ws.get_all_records()
+        for r in rows:
+            teacher_name = str(r.get("O'qituvchi", "")).strip()
+            date = str(r.get("Sana", "")).strip()
+            time = str(r.get("Vaqt", "")).strip()
+            status = str(r.get("Holati", "available")).strip()
+
+            if not teacher_name or not date or not time:
+                continue
+
+            # Find teacher by name
+            teacher = conn.execute(
+                "SELECT id FROM teachers WHERE name = ?", (teacher_name,)
+            ).fetchone()
+            if not teacher:
+                continue
+
+            # Insert slot if not exists
+            existing = conn.execute(
+                "SELECT id FROM slots WHERE teacher_id = ? AND date = ? AND time = ?",
+                (teacher["id"], date, time),
+            ).fetchone()
+            if not existing:
+                conn.execute(
+                    "INSERT INTO slots (teacher_id, date, time, status) VALUES (?, ?, ?, ?)",
+                    (teacher["id"], date, time, status),
+                )
+                s_count += 1
+        conn.commit()
+    except Exception as e:
+        logger.warning("load_from_sheets — slots: %s", e)
+
+    conn.close()
+    return t_count, s_count
