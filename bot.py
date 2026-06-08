@@ -21,7 +21,7 @@ from handlers.admin import addteacher_cmd, removeteacher_cmd
 from keyboard import (
     lang_picker_keyboard, student_reply_keyboard,
     admin_reply_keyboard, teacher_reply_keyboard,
-    date_picker_keyboard, time_picker_keyboard,
+    date_picker_keyboard, time_picker_multi_keyboard,
     day_picker_keyboard, time_picker_recurring_keyboard,
     recurring_list_keyboard, payment_approve_keyboard,
     booking_confirm_keyboard,
@@ -414,29 +414,58 @@ async def _unified_button_handler(update: Update, context):
             )
         elif data.startswith("addslot_date_"):
             selected_date = data.replace("addslot_date_", "")
+            # Clear previous selections and show multi-select time picker
+            context.user_data.pop("selected_times", None)
             await query.edit_message_text(
                 t("pick_time", lang, date=selected_date),
-                reply_markup=time_picker_keyboard(selected_date, lang),
+                reply_markup=time_picker_multi_keyboard(selected_date, None, lang),
                 parse_mode="Markdown",
             )
-        elif data.startswith("addslot_time_"):
-            parts = data.replace("addslot_time_", "", 1)
-            idx = parts.rfind("_")
-            selected_date = parts[:idx]
-            selected_time = parts[idx + 1:]
-            add_slot(uid, selected_date, selected_time)
-            text = t("slot_added", lang, date=selected_date, time=selected_time)
-            text += "\n\n" + t("add_more", lang)
-            kb = InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton("✅ " + t("yes_add_more", lang), callback_data="addslot_pick_date"),
-                    InlineKeyboardButton("❌ " + t("no_back", lang), callback_data="menu_back"),
-                ]
-            ])
+        # Multi-select: toggle a time checkbox
+        elif data.startswith("multitime_"):
+            parts = data.replace("multitime_", "", 1)
+            # parts = "HH:MM_YYYY-MM-DD"
+            last_underscore = parts.rfind("_")
+            tm = parts[:last_underscore]  # HH:MM
+            selected_date = parts[last_underscore + 1:]  # YYYY-MM-DD
+
+            selected_times = context.user_data.setdefault("selected_times", set())
+            if tm in selected_times:
+                selected_times.remove(tm)
+            else:
+                selected_times.add(tm)
+
+            # Update keyboard in-place without editing text
             try:
-                await query.edit_message_text(text, reply_markup=kb, parse_mode="Markdown")
+                await query.edit_message_reply_markup(
+                    reply_markup=time_picker_multi_keyboard(selected_date, selected_times, lang)
+                )
             except Exception:
-                await update.effective_message.reply_text(text, reply_markup=kb, parse_mode="Markdown")
+                pass  # No visual change, it's fine
+        # Multi-select: Done — create all selected slots
+        elif data.startswith("multitime_done_"):
+            selected_date = data.replace("multitime_done_", "")
+            selected_times = context.user_data.get("selected_times", set())
+            context.user_data.pop("selected_times", None)
+
+            if not selected_times:
+                await query.answer(t("no_times_selected", lang), show_alert=True)
+                return
+
+            # Create all selected slots (sorted by time)
+            for tm in sorted(selected_times):
+                add_slot(uid, selected_date, tm)
+
+            count = len(selected_times)
+            text = t("slots_added", lang, count=count, date=selected_date)
+            await query.edit_message_text(
+                text,
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("➕ " + t("yes_add_more", lang), callback_data="addslot_pick_date"),
+                    InlineKeyboardButton("✅ " + t("no_back", lang), callback_data="menu_back"),
+                ]]),
+            )
         await query.answer()
         return
 

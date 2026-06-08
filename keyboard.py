@@ -76,7 +76,7 @@ def date_picker_keyboard(lang="uz"):
     return InlineKeyboardMarkup(buttons)
 
 
-# ─── Time Picker ─────────────────────────────────────
+# ─── Time Picker (Multi-Select with Checkboxes) ──────
 
 HOURS = list(range(9, 19))  # 9 to 18
 MINUTE_INTERVALS = ["00", "15", "30", "45"]
@@ -84,19 +84,30 @@ MINUTE_INTERVALS = ["00", "15", "30", "45"]
 TIMES = [f"{h:02d}:{m}" for h in HOURS for m in MINUTE_INTERVALS]
 
 
-def time_picker_keyboard(selected_date, lang="uz"):
+def time_picker_multi_keyboard(selected_date, selected_times=None, lang="uz"):
+    """Show times as checkboxes ☐/☑. selected_times is a set of 'HH:MM' strings."""
+    if selected_times is None:
+        selected_times = set()
     buttons = []
     row = []
     for tm in TIMES:
+        prefix = "☑" if tm in selected_times else "☐"
         row.append(InlineKeyboardButton(
-            tm,
-            callback_data=f"addslot_time_{selected_date}_{tm}",
+            f"{prefix} {tm}",
+            callback_data=f"multitime_{tm}_{selected_date}",
         ))
-        if len(row) == 4:
+        if len(row) == 3:
             buttons.append(row)
             row = []
     if row:
         buttons.append(row)
+    # Done button
+    buttons.append([
+        InlineKeyboardButton(
+            "✅ Done",
+            callback_data=f"multitime_done_{selected_date}",
+        )
+    ])
     return InlineKeyboardMarkup(buttons)
 
 

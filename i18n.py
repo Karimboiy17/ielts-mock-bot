@@ -120,6 +120,16 @@ T = {
         "en": "Add another slot?",
         "ru": "Добавить еще слот?",
     },
+    "no_times_selected": {
+        "uz": "Hech qanday vaqt tanlanmadi!",
+        "en": "No times selected!",
+        "ru": "Время не выбрано!",
+    },
+    "slots_added": {
+        "uz": "✅ {count} ta slot qo'shildi: {date}",
+        "en": "✅ {count} slots added: {date}",
+        "ru": "✅ Добавлено {count} слотов: {date}",
+    },
     "yes_add_more": {
         "uz": "Ha, yana qo'shish",
         "en": "Yes, add more",
