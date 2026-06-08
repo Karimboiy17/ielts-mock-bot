@@ -44,6 +44,22 @@ async def handle_menu_text(update: Update, context):
         await myslots_cmd(update, context)
     elif text == "👨‍🏫 O'qituvchi qo'shish":
         await addteacher_cmd(update, context)
+    elif text == "📊 Barcha bandlovlar":
+        # Admin: show all bookings
+        if not is_admin(uid):
+            await update.message.reply_text("⛔ Admin huquqi kerak.")
+            return
+        from db import get_all_bookings
+        bookings = get_all_bookings()
+        if not bookings:
+            await update.message.reply_text("📭 Hozircha hech qanday bandlov yo'q.")
+            return
+        msg = "*📊 Barcha bandlovlar:*\n\n"
+        status_map = {"pending": "⏳", "accepted": "✅", "rejected": "❌"}
+        for b in bookings:
+            icon = status_map.get(b["status"], "❓")
+            msg += f"{icon} {b['student_name']} → {b['teacher_name']} | {b['date']} {b['time']}\n"
+        await update.message.reply_text(msg, parse_mode="Markdown")
 
 
 # ── Also wire add-slot callbacks into the student button_handler ──
@@ -147,7 +163,8 @@ def main():
          filters.Text("❌ Bandlovni bekor qilish") |
          filters.Text("➕ Yangi slot") |
          filters.Text("📊 Slotlarim") |
-         filters.Text("👨‍🏫 O'qituvchi qo'shish")),
+         filters.Text("👨‍🏫 O'qituvchi qo'shish") |
+         filters.Text("📊 Barcha bandlovlar")),
         handle_menu_text,
     ))
 

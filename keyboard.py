@@ -6,18 +6,19 @@ from telegram import KeyboardButton, ReplyKeyboardMarkup
 
 def main_menu_reply(is_admin=False):
     """Persistent reply keyboard at bottom of chat."""
-    rows = [
-        [KeyboardButton("📋 Mavjud slotlar")],
-        [KeyboardButton("📅 Mening bandlovlarim"), KeyboardButton("❌ Bandlovni bekor qilish")],
-    ]
     if is_admin:
-        rows.append([
-            KeyboardButton("➕ Yangi slot"),
-            KeyboardButton("📊 Slotlarim"),
-        ])
-        rows.append([
-            KeyboardButton("👨‍🏫 O'qituvchi qo'shish"),
-        ])
+        # Admin sees ONLY admin panel
+        rows = [
+            [KeyboardButton("➕ Yangi slot"), KeyboardButton("📊 Slotlarim")],
+            [KeyboardButton("👨‍🏫 O'qituvchi qo'shish")],
+            [KeyboardButton("📊 Barcha bandlovlar")],
+        ]
+    else:
+        # Students see only student options
+        rows = [
+            [KeyboardButton("📋 Mavjud slotlar")],
+            [KeyboardButton("📅 Mening bandlovlarim"), KeyboardButton("❌ Bandlovni bekor qilish")],
+        ]
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
 

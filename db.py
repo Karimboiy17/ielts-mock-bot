@@ -258,3 +258,18 @@ def remove_teacher_db(telegram_id):
     conn.execute("DELETE FROM teachers WHERE telegram_id = ?", (telegram_id,))
     conn.commit()
     conn.close()
+
+
+
+def get_all_bookings():
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT b.id, b.student_name, b.status, "
+        "s.date, s.time, t.name AS teacher_name "
+        "FROM bookings b "
+        "JOIN slots s ON b.slot_id = s.id "
+        "JOIN teachers t ON s.teacher_id = t.id "
+        "ORDER BY s.date, s.time"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
