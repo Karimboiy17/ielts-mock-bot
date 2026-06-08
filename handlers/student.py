@@ -27,7 +27,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "4️⃣ \"📅 Mening bandlovlarim\" — bandlovlaringizni ko'ring\n"
         "5️⃣ \"❌ Bandlovni bekor qilish\" — kerak bo'lsa bekor qiling\n\n"
         "⏱ _Bandlov 24 soat ichida tasdiqlanadi._\n"
-        "❓ _Savollar bo'lsa: @Karimboiy17_"
     )
     if admin:
         text = (
