@@ -372,3 +372,12 @@ def get_all_bookings():
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def get_all_teachers():
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, telegram_id, name, username FROM teachers ORDER BY name"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]

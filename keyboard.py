@@ -11,7 +11,7 @@ def main_menu_reply(is_admin=False):
         rows = [
             [KeyboardButton("➕ Yangi slot"), KeyboardButton("📊 Slotlarim")],
             [KeyboardButton("🔄 Doimiy slot qo'shish"), KeyboardButton("📋 Doimiy slotlarim")],
-            [KeyboardButton("👨‍🏫 O'qituvchi qo'shish")],
+            [KeyboardButton("👨‍🏫 O'qituvchi qo'shish"), KeyboardButton("👥 O'qituvchilar")],
             [KeyboardButton("📊 Barcha bandlovlar")],
         ]
     else:

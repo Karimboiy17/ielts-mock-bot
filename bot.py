@@ -1,8 +1,8 @@
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
-from config import BOT_TOKEN, ADMIN_IDS
-from db import init_db, is_teacher, add_teacher, add_slot, get_all_bookings
+from config import BOT_TOKEN, ADMIN_IDS, TEACHER_IDS
+from db import init_db, is_teacher, add_teacher, add_slot, get_all_bookings, get_all_teachers
 from handlers.student import (
     start, slots_cmd, mybookings_cmd, cancel_cmd, button_handler,
 )
@@ -18,6 +18,17 @@ def is_admin(user_id):
     return user_id in ADMIN_IDS
 
 
+def is_teacher_or_env(user_id):
+    """Check if user is a teacher (by DB or env var)."""
+    return user_id in TEACHER_IDS or is_teacher(user_id)
+
+
+def _auto_register_teacher(uid, name="Teacher"):
+    """Register user as teacher if in TEACHER_IDS but not yet in DB."""
+    if uid in TEACHER_IDS and not is_teacher(uid):
+        add_teacher(uid, name)
+
+
 async def handle_menu_text(update: Update, context):
     """Handle ReplyKeyboard menu button presses."""
     text = update.message.text
@@ -29,52 +40,44 @@ async def handle_menu_text(update: Update, context):
         await mybookings_cmd(update, context)
     elif text == "❌ Bandlovni bekor qilish":
         await cancel_cmd(update, context)
-    elif text == "➕ Yangi slot":
-        if not is_admin(uid) and not is_teacher(uid):
+    elif text in ("➕ Yangi slot", "🔄 Doimiy slot qo'shish", "📋 Doimiy slotlarim", "📊 Slotlarim"):
+        if not is_admin(uid) and not is_teacher_or_env(uid):
             await update.message.reply_text("⛔ Admin huquqi kerak.")
             return
-        if is_admin(uid) and not is_teacher(uid):
-            name = update.effective_user.full_name or "Admin"
-            add_teacher(uid, name)
-        await update.message.reply_text(
-            "📅 *Slot sanasini tanlang:*",
-            reply_markup=date_picker_keyboard(),
-            parse_mode="Markdown",
-        )
-    elif text == "🔄 Doimiy slot qo'shish":
-        if not is_admin(uid) and not is_teacher(uid):
-            await update.message.reply_text("⛔ Admin huquqi kerak.")
-            return
-        if is_admin(uid) and not is_teacher(uid):
-            name = update.effective_user.full_name or "Admin"
-            add_teacher(uid, name)
-        await update.message.reply_text(
-            "📅 *Doimiy slot uchun kunni tanlang:* (har hafta shu kuni slot ochiladi)",
-            reply_markup=day_picker_keyboard(),
-            parse_mode="Markdown",
-        )
-    elif text == "📋 Doimiy slotlarim":
-        if not is_admin(uid) and not is_teacher(uid):
-            await update.message.reply_text("⛔ Admin huquqi kerak.")
-            return
-        from db import get_recurring_patterns, DAY_NAMES
-        patterns = get_recurring_patterns(uid)
-        if not patterns:
-            await update.message.reply_text("📭 Hozircha doimiy slotlar yo'q.\n\n🔄 *Doimiy slot qo'shish* tugmasini bosing.",
-                                           parse_mode="Markdown")
-            return
-        msg = "*📋 Doimiy slotlaringiz:*\n\n"
-        for p in patterns:
-            day_name = DAY_NAMES.get(p["day_of_week"], str(p["day_of_week"]))
-            msg += f"• {day_name} — {p['time']}\n"
-        msg += "\n🗑 O'chirish uchun pastdagi slotni bosing:"
-        await update.message.reply_text(
-            msg,
-            reply_markup=recurring_list_keyboard(patterns),
-            parse_mode="Markdown",
-        )
-    elif text == "📊 Slotlarim":
-        await myslots_cmd(update, context)
+        if not is_teacher(uid):
+            _auto_register_teacher(uid, update.effective_user.full_name or "Teacher")
+
+        if text == "➕ Yangi slot":
+            await update.message.reply_text(
+                "📅 *Slot sanasini tanlang:*",
+                reply_markup=date_picker_keyboard(),
+                parse_mode="Markdown",
+            )
+        elif text == "🔄 Doimiy slot qo'shish":
+            await update.message.reply_text(
+                "📅 *Doimiy slot uchun kunni tanlang:* (har hafta shu kuni slot ochiladi)",
+                reply_markup=day_picker_keyboard(),
+                parse_mode="Markdown",
+            )
+        elif text == "📋 Doimiy slotlarim":
+            from db import get_recurring_patterns, DAY_NAMES
+            patterns = get_recurring_patterns(uid)
+            if not patterns:
+                await update.message.reply_text("📭 Hozircha doimiy slotlar yo'q.\n\n🔄 *Doimiy slot qo'shish* tugmasini bosing.",
+                                               parse_mode="Markdown")
+                return
+            msg = "*📋 Doimiy slotlaringiz:*\n\n"
+            for p in patterns:
+                day_name = DAY_NAMES.get(p["day_of_week"], str(p["day_of_week"]))
+                msg += f"• {day_name} — {p['time']}\n"
+            msg += "\n🗑 O'chirish uchun pastdagi slotni bosing:"
+            await update.message.reply_text(
+                msg,
+                reply_markup=recurring_list_keyboard(patterns),
+                parse_mode="Markdown",
+            )
+        elif text == "📊 Slotlarim":
+            await myslots_cmd(update, context)
     elif text == "👨‍🏫 O'qituvchi qo'shish":
         await update.message.reply_text(
             "📝 *O'qituvchi qo'shish* — quyidagi usullardan birini ishlating:\n\n"
@@ -99,6 +102,19 @@ async def handle_menu_text(update: Update, context):
             icon = status_map.get(b["status"], "❓")
             msg += f"{icon} {b['student_name']} → {b['teacher_name']} | {b['date']} {b['time']}\n"
         await update.message.reply_text(msg, parse_mode="Markdown")
+    elif text == "👥 O'qituvchilar":
+        if not is_admin(uid):
+            await update.message.reply_text("⛔ Admin huquqi kerak.")
+            return
+        teachers = get_all_teachers()
+        if not teachers:
+            await update.message.reply_text("📭 Hozircha o'qituvchilar yo'q.")
+            return
+        msg = "*👥 Ro'yxatdagi o'qituvchilar:*\n\n"
+        for t in teachers:
+            uname = f" (@{t['username']})" if t.get('username') else ""
+            msg += f"• {t['name']}{uname} — ID: `{t['telegram_id']}`\n"
+        await update.message.reply_text(msg, parse_mode="Markdown")
 
 
 # ── Unified callback handler ──
@@ -115,13 +131,12 @@ async def unified_button_handler(update: Update, context):
 
     # ── Add-slot flow ──
     if data.startswith("addslot_"):
-        if not is_admin(uid) and not is_teacher(uid):
+        if not is_admin(uid) and not is_teacher_or_env(uid):
             await query.answer("⛔ Admin huquqi kerak.", show_alert=True)
             return
 
-        if is_admin(uid) and not is_teacher(uid):
-            name = user.full_name or "Admin"
-            add_teacher(uid, name)
+        if not is_teacher(uid):
+            _auto_register_teacher(uid, user.full_name or "Teacher")
 
         if data == "addslot_pick_date":
             await query.edit_message_text(
@@ -160,13 +175,12 @@ async def unified_button_handler(update: Update, context):
 
     # ── Recurring pattern flow ──
     if data.startswith("recur_"):
-        if not is_admin(uid) and not is_teacher(uid):
+        if not is_admin(uid) and not is_teacher_or_env(uid):
             await query.answer("⛔ Admin huquqi kerak.", show_alert=True)
             return
 
-        if is_admin(uid) and not is_teacher(uid):
-            name = user.full_name or "Admin"
-            add_teacher(uid, name)
+        if not is_teacher(uid):
+            _auto_register_teacher(uid, user.full_name or "Teacher")
 
         if data == "recur_pick_day":
             await query.edit_message_text(
@@ -266,7 +280,8 @@ def main():
          filters.Text("📋 Doimiy slotlarim") |
          filters.Text("📊 Slotlarim") |
          filters.Text("👨‍🏫 O'qituvchi qo'shish") |
-         filters.Text("📊 Barcha bandlovlar")),
+         filters.Text("📊 Barcha bandlovlar") |
+         filters.Text("👥 O'qituvchilar")),
         handle_menu_text,
     ))
 
