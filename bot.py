@@ -285,8 +285,29 @@ def main():
         handle_menu_text,
     ))
 
+    import asyncio
+    from telegram.error import Conflict
+
     print("✅ IELTS Mock Booking Bot ishga tushdi!")
-    app.run_polling()
+
+    async def run_with_retry():
+        retries = 0
+        while True:
+            try:
+                await app.initialize()
+                await app.start()
+                await app.updater.start_polling()
+                await app.updater.wait_closed()
+            except Conflict:
+                retries += 1
+                wait = min(5 * retries, 30)
+                print(f"⚠️ Conflict — eski instans hali ishlamoqda. {wait} soniyadan keyin qayta urinish (#{retries})...")
+                await asyncio.sleep(wait)
+            except Exception as e:
+                print(f"❌ Xato: {e}")
+                break
+
+    asyncio.run(run_with_retry())
 
 
 if __name__ == "__main__":
