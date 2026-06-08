@@ -2,13 +2,16 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
 from config import BOT_TOKEN, ADMIN_IDS
-from db import init_db, is_teacher, add_teacher, add_slot
+from db import init_db, is_teacher, add_teacher, add_slot, get_all_bookings
 from handlers.student import (
     start, slots_cmd, mybookings_cmd, cancel_cmd, button_handler,
 )
 from handlers.teacher import addslot_cmd, myslots_cmd, removeslot_cmd
 from handlers.admin import addteacher_cmd, removeteacher_cmd
-from keyboard import date_picker_keyboard, time_picker_keyboard, main_menu_reply
+from keyboard import (
+    date_picker_keyboard, time_picker_keyboard, main_menu_reply,
+    day_picker_keyboard, time_picker_recurring_keyboard, recurring_list_keyboard,
+)
 
 
 def is_admin(user_id):
@@ -27,11 +30,9 @@ async def handle_menu_text(update: Update, context):
     elif text == "❌ Bandlovni bekor qilish":
         await cancel_cmd(update, context)
     elif text == "➕ Yangi slot":
-        # Admin: show date picker
         if not is_admin(uid) and not is_teacher(uid):
             await update.message.reply_text("⛔ Admin huquqi kerak.")
             return
-        # Auto-register
         if is_admin(uid) and not is_teacher(uid):
             name = update.effective_user.full_name or "Admin"
             add_teacher(uid, name)
@@ -40,16 +41,46 @@ async def handle_menu_text(update: Update, context):
             reply_markup=date_picker_keyboard(),
             parse_mode="Markdown",
         )
+    elif text == "🔄 Doimiy slot qo'shish":
+        if not is_admin(uid) and not is_teacher(uid):
+            await update.message.reply_text("⛔ Admin huquqi kerak.")
+            return
+        if is_admin(uid) and not is_teacher(uid):
+            name = update.effective_user.full_name or "Admin"
+            add_teacher(uid, name)
+        await update.message.reply_text(
+            "📅 *Doimiy slot uchun kunni tanlang:* (har hafta shu kuni slot ochiladi)",
+            reply_markup=day_picker_keyboard(),
+            parse_mode="Markdown",
+        )
+    elif text == "📋 Doimiy slotlarim":
+        if not is_admin(uid) and not is_teacher(uid):
+            await update.message.reply_text("⛔ Admin huquqi kerak.")
+            return
+        from db import get_recurring_patterns, DAY_NAMES
+        patterns = get_recurring_patterns(uid)
+        if not patterns:
+            await update.message.reply_text("📭 Hozircha doimiy slotlar yo'q.\n\n🔄 *Doimiy slot qo'shish* tugmasini bosing.",
+                                           parse_mode="Markdown")
+            return
+        msg = "*📋 Doimiy slotlaringiz:*\n\n"
+        for p in patterns:
+            day_name = DAY_NAMES.get(p["day_of_week"], str(p["day_of_week"]))
+            msg += f"• {day_name} — {p['time']}\n"
+        msg += "\n🗑 O'chirish uchun pastdagi slotni bosing:"
+        await update.message.reply_text(
+            msg,
+            reply_markup=recurring_list_keyboard(patterns),
+            parse_mode="Markdown",
+        )
     elif text == "📊 Slotlarim":
         await myslots_cmd(update, context)
     elif text == "👨‍🏫 O'qituvchi qo'shish":
         await addteacher_cmd(update, context)
     elif text == "📊 Barcha bandlovlar":
-        # Admin: show all bookings
         if not is_admin(uid):
             await update.message.reply_text("⛔ Admin huquqi kerak.")
             return
-        from db import get_all_bookings
         bookings = get_all_bookings()
         if not bookings:
             await update.message.reply_text("📭 Hozircha hech qanday bandlov yo'q.")
@@ -62,26 +93,24 @@ async def handle_menu_text(update: Update, context):
         await update.message.reply_text(msg, parse_mode="Markdown")
 
 
-# ── Also wire add-slot callbacks into the student button_handler ──
-# We monkey-patch by extending button_handler in bot.py so we keep one CallbackQueryHandler.
+# ── Unified callback handler ──
 
 _original_button_handler = button_handler
 
 
 async def unified_button_handler(update: Update, context):
-    """Handles ALL inline button callbacks — student + admin add-slot flow."""
+    """Handles ALL inline button callbacks."""
     query = update.callback_query
     data = query.data
     user = update.effective_user
     uid = user.id
 
-    # ── Add-slot flow (admin / teacher) ──
+    # ── Add-slot flow ──
     if data.startswith("addslot_"):
         if not is_admin(uid) and not is_teacher(uid):
             await query.answer("⛔ Admin huquqi kerak.", show_alert=True)
             return
 
-        # Auto-register
         if is_admin(uid) and not is_teacher(uid):
             name = user.full_name or "Admin"
             add_teacher(uid, name)
@@ -100,10 +129,7 @@ async def unified_button_handler(update: Update, context):
                 parse_mode="Markdown",
             )
         elif data.startswith("addslot_time_"):
-            # addslot_time_2026-06-09_14:00
             parts = data.replace("addslot_time_", "", 1)
-            # split on last underscore? No — format is date_time
-            # Find last underscore position for time
             idx = parts.rfind("_")
             selected_date = parts[:idx]
             selected_time = parts[idx + 1:]
@@ -113,7 +139,6 @@ async def unified_button_handler(update: Update, context):
                 f"📅 Sana: {selected_date}\n"
                 f"🕐 Vaqt: {selected_time}"
             )
-            # If called from message, need to send new; from callback we can edit
             try:
                 await query.edit_message_text(
                     text,
@@ -121,14 +146,81 @@ async def unified_button_handler(update: Update, context):
                     parse_mode="Markdown",
                 )
             except Exception:
-                await update.effective_message.reply_text(
-                    text,
+                await update.effective_message.reply_text(text, parse_mode="Markdown")
+        await query.answer()
+        return
+
+    # ── Recurring pattern flow ──
+    if data.startswith("recur_"):
+        if not is_admin(uid) and not is_teacher(uid):
+            await query.answer("⛔ Admin huquqi kerak.", show_alert=True)
+            return
+
+        if is_admin(uid) and not is_teacher(uid):
+            name = user.full_name or "Admin"
+            add_teacher(uid, name)
+
+        if data == "recur_pick_day":
+            await query.edit_message_text(
+                "📅 *Doimiy slot uchun kunni tanlang:*",
+                reply_markup=day_picker_keyboard(),
+                parse_mode="Markdown",
+            )
+        elif data.startswith("recur_day_"):
+            day_of_week = int(data.replace("recur_day_", ""))
+            from db import DAY_NAMES
+            day_name = DAY_NAMES.get(day_of_week, str(day_of_week))
+            await query.edit_message_text(
+                f"🕐 *{day_name} — vaqtni tanlang:*",
+                reply_markup=time_picker_recurring_keyboard(day_of_week),
+                parse_mode="Markdown",
+            )
+        elif data.startswith("recur_time_"):
+            # recur_time_3_14:00
+            parts = data.replace("recur_time_", "", 1)
+            idx = parts.find("_")
+            day_of_week = int(parts[:idx])
+            selected_time = parts[idx + 1:]
+            from db import add_recurring_pattern, generate_slots_from_patterns, DAY_NAMES
+            day_name = DAY_NAMES.get(day_of_week, str(day_of_week))
+            add_recurring_pattern(uid, day_of_week, selected_time)
+            count = generate_slots_from_patterns(uid, weeks=4)
+            text = (
+                f"✅ *Doimiy slot qo'shildi!*\n\n"
+                f"📅 Har hafta: *{day_name}*\n"
+                f"🕐 Vaqt: {selected_time}\n"
+                f"📊 {count} ta yangi slot yaratildi (4 haftaga)"
+            )
+            await query.edit_message_text(
+                text,
+                parse_mode="Markdown",
+                reply_markup=day_picker_keyboard(),
+            )
+        elif data.startswith("recur_del_"):
+            pattern_id = int(data.replace("recur_del_", ""))
+            from db import remove_recurring_pattern, get_recurring_patterns, DAY_NAMES
+            remove_recurring_pattern(pattern_id, uid)
+            patterns = get_recurring_patterns(uid)
+            if not patterns:
+                await query.edit_message_text(
+                    "🗑 *Doimiy slot o'chirildi!* Endi doimiy slotlar yo'q.",
+                    parse_mode="Markdown",
+                )
+            else:
+                msg = "*📋 Doimiy slotlaringiz:*\n\n"
+                for p in patterns:
+                    day_name = DAY_NAMES.get(p["day_of_week"], str(p["day_of_week"]))
+                    msg += f"• {day_name} — {p['time']}\n"
+                msg += "\n🗑 O'chirish uchun pastdagi slotni bosing:"
+                await query.edit_message_text(
+                    msg,
+                    reply_markup=recurring_list_keyboard(patterns),
                     parse_mode="Markdown",
                 )
         await query.answer()
         return
 
-    # ── Fall through to original student button handler ──
+    # ── Fall through to student button handler ──
     await _original_button_handler(update, context)
 
 
@@ -152,16 +244,18 @@ def main():
     app.add_handler(CommandHandler("addteacher", addteacher_cmd))
     app.add_handler(CommandHandler("removeteacher", removeteacher_cmd))
 
-    # Inline button handler (covers all callbacks: student booking + admin add-slot)
+    # Inline button handler
     app.add_handler(CallbackQueryHandler(unified_button_handler))
 
-    # ReplyKeyboard menu button handler
+    # ReplyKeyboard menu handler
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND &
         (filters.Text("📋 Mavjud slotlar") |
          filters.Text("📅 Mening bandlovlarim") |
          filters.Text("❌ Bandlovni bekor qilish") |
          filters.Text("➕ Yangi slot") |
+         filters.Text("🔄 Doimiy slot qo'shish") |
+         filters.Text("📋 Doimiy slotlarim") |
          filters.Text("📊 Slotlarim") |
          filters.Text("👨‍🏫 O'qituvchi qo'shish") |
          filters.Text("📊 Barcha bandlovlar")),

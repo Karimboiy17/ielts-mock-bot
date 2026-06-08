@@ -1,4 +1,6 @@
 import sqlite3
+import os
+from datetime import date, timedelta
 
 DB = "bookings.db"
 
@@ -39,6 +41,16 @@ def init_db():
             status TEXT DEFAULT 'pending',
             booked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (slot_id) REFERENCES slots(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS recurring_patterns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            teacher_telegram_id INTEGER NOT NULL,
+            day_of_week INTEGER NOT NULL,
+            time TEXT NOT NULL,
+            active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(teacher_telegram_id, day_of_week, time)
         );
     """)
     conn.commit()
@@ -105,6 +117,94 @@ def remove_slot(slot_id, teacher_telegram_id):
     conn.close()
 
 
+# ─── Recurring Patterns ───────────────────────────────────
+
+DAY_NAMES = {
+    0: "Dushanba", 1: "Seshanba", 2: "Chorshanba",
+    3: "Payshanba", 4: "Juma", 5: "Shanba", 6: "Yakshanba",
+}
+
+WEEKDAY_MAP = {
+    "Dushanba": 0, "Seshanba": 1, "Chorshanba": 2, "Chorshanba": 2,
+    "Payshanba": 3, "Juma": 4, "Shanba": 5, "Yakshanba": 6,
+}
+
+
+def add_recurring_pattern(teacher_telegram_id, day_of_week, time):
+    conn = get_db()
+    conn.execute(
+        "INSERT OR IGNORE INTO recurring_patterns (teacher_telegram_id, day_of_week, time) VALUES (?, ?, ?)",
+        (teacher_telegram_id, day_of_week, time),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_recurring_patterns(teacher_telegram_id):
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM recurring_patterns WHERE teacher_telegram_id = ? AND active = 1 ORDER BY day_of_week, time",
+        (teacher_telegram_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def remove_recurring_pattern(pattern_id, teacher_telegram_id):
+    conn = get_db()
+    conn.execute(
+        "DELETE FROM recurring_patterns WHERE id = ? AND teacher_telegram_id = ?",
+        (pattern_id, teacher_telegram_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def generate_slots_from_patterns(teacher_telegram_id, weeks=4):
+    """Generate available slots for next N weeks from teacher's recurring patterns.
+    Skips days that already have a slot (any status) for that teacher+date+time.
+    """
+    patterns = get_recurring_patterns(teacher_telegram_id)
+    if not patterns:
+        return 0
+
+    conn = get_db()
+    today = date.today()
+    count = 0
+
+    for pattern in patterns:
+        target_dow = pattern["day_of_week"]  # 0=Mon, 6=Sun
+        t = pattern["time"]
+
+        for week in range(weeks):
+            d = today + timedelta(weeks=week)
+            # find next occurrence of target_dow
+            days_ahead = target_dow - d.weekday()
+            if days_ahead < 0:
+                days_ahead += 7
+            slot_date = d + timedelta(days=days_ahead)
+
+            slot_date_str = slot_date.strftime("%Y-%m-%d")
+
+            # Check if slot already exists for this teacher+date+time
+            existing = conn.execute(
+                "SELECT id FROM slots WHERE teacher_id = (SELECT id FROM teachers WHERE telegram_id=?) AND date = ? AND time = ?",
+                (teacher_telegram_id, slot_date_str, t),
+            ).fetchone()
+
+            if not existing:
+                conn.execute(
+                    "INSERT INTO slots (teacher_id, date, time, status) "
+                    "VALUES ((SELECT id FROM teachers WHERE telegram_id=?), ?, ?, 'available')",
+                    (teacher_telegram_id, slot_date_str, t),
+                )
+                count += 1
+
+    conn.commit()
+    conn.close()
+    return count
+
+
 # ─── Student ──────────────────────────────────────────────
 
 def get_available_slots():
@@ -116,7 +216,7 @@ def get_available_slots():
         JOIN teachers t ON t.id = s.teacher_id
         WHERE s.status = 'available'
         ORDER BY s.date, s.time
-        LIMIT 20
+        LIMIT 30
         """
     ).fetchall()
     conn.close()
@@ -258,7 +358,6 @@ def remove_teacher_db(telegram_id):
     conn.execute("DELETE FROM teachers WHERE telegram_id = ?", (telegram_id,))
     conn.commit()
     conn.close()
-
 
 
 def get_all_bookings():
